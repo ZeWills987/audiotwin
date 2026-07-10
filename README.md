@@ -64,9 +64,10 @@ print(result["is_duplicate"], result["confidence"])
 ### CLI
 
 ```bash
-audiotwin compare track_a.mp3 track_b.flac        # human-readable
-audiotwin compare track_a.mp3 track_b.flac --json # machine-readable
-audiotwin fingerprint track.mp3                   # just the fingerprint
+audiotwin compare track_a.mp3 track_b.flac         # human-readable
+audiotwin compare track_a.mp3 track_b.flac --json  # machine-readable
+audiotwin classify track_a.mp3 track_b.flac --json # DUPLICATE / REMASTER / NO_RELATION
+audiotwin fingerprint track.mp3                    # just the fingerprint
 ```
 
 ## The pipeline — three levels
@@ -114,13 +115,53 @@ The thresholds (`0.85`, `0.90`) are the defaults; both are configurable via
 `chromaprint_threshold` / `nfp_threshold` parameters on `detect` and
 `combine_scores`.
 
+## Classifying relations (DUPLICATE vs REMASTER)
+
+Beyond the binary duplicate/not-duplicate question, `classify_relation(...)`
+(and its file-based counterpart `detect_relation(...)`) reads the *same two
+scores* — `chromaprint_score` and `nfp_score` — through a finer grid, to also
+recognize **REMASTER**: the same performance/recording, but with the signal
+reworked (EQ, dynamics, a light re-mix). In one sentence: **REMASTER is the
+signature of NFP staying high while Chromaprint drops** — same structural
+content, different spectral texture.
+
+| `chromaprint_score`                                 | `nfp_score`                       | `relation_type` |
+| ---------------------------------------------------- | ---------------------------------- | ---------------- |
+| `≥ duplicate_threshold` (0.85)                        | any                                 | `DUPLICATE`       |
+| `remaster_chromaprint_min` (0.60) `≤ … <` `duplicate_threshold` | `≥ remaster_nfp_threshold` (0.90) | `REMASTER`        |
+| `remaster_chromaprint_min` (0.60) `≤ … <` `duplicate_threshold` | `< remaster_nfp_threshold` or absent | `NO_RELATION`     |
+| `< remaster_chromaprint_min` (0.60)                   | any                                 | `NO_RELATION`     |
+
+A file hash match still short-circuits everything, straight to `DUPLICATE`
+with `confidence = 1.0`.
+
+```bash
+audiotwin classify track_a.mp3 track_b_remaster.mp3 --nfp-score 0.95 --json
+```
+
+```python
+from audiotwin import detect_relation
+
+result = detect_relation("track_a.mp3", "track_b_remaster.mp3", nfp_score=0.95)
+print(result["relation_type"], result["score_gap"])  # "REMASTER" 0.25
+```
+
+Every threshold in the grid is a keyword parameter with the defaults shown
+above — pass `duplicate_threshold`, `remaster_chromaprint_min`,
+`remaster_chromaprint_max`, or `remaster_nfp_threshold` to tune it.
+
 ## Limitations
 
 Be honest about what this does and does not do:
 
-- **Same master only.** `audiotwin` detects the *same recording* re-encoded or
-  re-sourced. It does **not** detect covers, live versions, remixes, or remasters
-  — those are different audio and will score low by design.
+- **Same master, or a remaster of it, only.** `audiotwin` detects the *same
+  recording* re-encoded, re-sourced, or remastered. It does **not** detect
+  covers, live versions, or remixes — those change the structural content
+  itself and will score low by design.
+- **REMASTER classification needs an NFP score.** Without one, `audiotwin`
+  can only tell DUPLICATE from "not confirmed" — it cannot distinguish
+  REMASTER from an unrelated track with a coincidentally similar spectral
+  fingerprint.
 - **≥ 10 seconds of audio required.** Shorter clips don't yield a reliable
   fingerprint; `compute_fingerprint` raises `AudioTooShortError`.
 - **NFP is optional but improves precision.** Chromaprint alone is strong but

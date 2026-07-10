@@ -2,6 +2,7 @@
 
 Examples:
     audiotwin compare a.mp3 b.mp3 --json
+    audiotwin classify a.mp3 b.mp3 --json
     audiotwin fingerprint track.mp3
 """
 
@@ -14,9 +15,12 @@ import sys
 from audiotwin.core import (
     DEFAULT_CHROMAPRINT_THRESHOLD,
     DEFAULT_NFP_THRESHOLD,
+    DEFAULT_REMASTER_CHROMAPRINT_MIN,
+    DEFAULT_REMASTER_NFP_THRESHOLD,
     AudioTooShortError,
     compute_fingerprint,
     detect,
+    detect_relation,
 )
 
 
@@ -55,6 +59,47 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"NFP confirmation threshold (default: {DEFAULT_NFP_THRESHOLD}).",
     )
 
+    classify = sub.add_parser(
+        "classify", help="Classify two audio files as DUPLICATE, REMASTER, or unrelated."
+    )
+    classify.add_argument("file_a", help="First audio file.")
+    classify.add_argument("file_b", help="Second audio file.")
+    classify.add_argument("--json", action="store_true", help="Emit JSON output.")
+    classify.add_argument(
+        "--max-duration",
+        type=int,
+        default=120,
+        help="Seconds of leading audio to fingerprint (default: 120).",
+    )
+    classify.add_argument("--nfp-score", type=float, default=None, help="Optional NFP score.")
+    classify.add_argument(
+        "--nfp-segments-matched", type=int, default=None, help="Optional NFP metadata."
+    )
+    classify.add_argument(
+        "--nfp-coverage", type=float, default=None, help="Optional NFP metadata."
+    )
+    classify.add_argument(
+        "--duplicate-threshold",
+        type=float,
+        default=DEFAULT_CHROMAPRINT_THRESHOLD,
+        help=f"Chromaprint match threshold (default: {DEFAULT_CHROMAPRINT_THRESHOLD}).",
+    )
+    classify.add_argument(
+        "--remaster-chromaprint-min",
+        type=float,
+        default=DEFAULT_REMASTER_CHROMAPRINT_MIN,
+        help=f"Lower Chromaprint bound for REMASTER (default: {DEFAULT_REMASTER_CHROMAPRINT_MIN}).",
+    )
+    classify.add_argument(
+        "--remaster-nfp-threshold",
+        type=float,
+        default=DEFAULT_REMASTER_NFP_THRESHOLD,
+        help=(
+            "NFP confirmation threshold for REMASTER "
+            f"(default: {DEFAULT_REMASTER_NFP_THRESHOLD})."
+        ),
+    )
+
     fingerprint = sub.add_parser("fingerprint", help="Print a file's Chromaprint fingerprint.")
     fingerprint.add_argument("file", help="Audio file.")
     fingerprint.add_argument(
@@ -79,6 +124,19 @@ def _print_human(result: dict) -> None:
         print(f"  nfp score        : {result['nfp_score']:.3f}")
 
 
+def _print_human_relation(result: dict) -> None:
+    print(f"{result['track_a']}")
+    print(f"{result['track_b']}")
+    print(f"  relation         : {result['relation_type']}")
+    print(f"  confidence       : {result['confidence']:.3f}")
+    print(f"  file hash match  : {result['file_hash_match']}")
+    print(f"  chromaprint score: {result['chromaprint_score']:.3f}")
+    if result["nfp_score"] is not None:
+        print(f"  nfp score        : {result['nfp_score']:.3f}")
+    if result["relation_type"] == "REMASTER" and result["score_gap"] is not None:
+        print(f"  score gap (nfp - chromaprint): {result['score_gap']:.3f}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -99,6 +157,24 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result, indent=2))
             else:
                 _print_human(result)
+            return 0
+
+        if args.command == "classify":
+            result = detect_relation(
+                args.file_a,
+                args.file_b,
+                nfp_score=args.nfp_score,
+                nfp_segments_matched=args.nfp_segments_matched,
+                nfp_coverage=args.nfp_coverage,
+                max_duration=args.max_duration,
+                duplicate_threshold=args.duplicate_threshold,
+                remaster_chromaprint_min=args.remaster_chromaprint_min,
+                remaster_nfp_threshold=args.remaster_nfp_threshold,
+            )
+            if args.json:
+                print(json.dumps(result, indent=2))
+            else:
+                _print_human_relation(result)
             return 0
 
         if args.command == "fingerprint":

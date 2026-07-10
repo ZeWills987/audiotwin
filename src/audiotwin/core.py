@@ -40,6 +40,13 @@ DEFAULT_CHROMAPRINT_THRESHOLD = 0.85
 #: Default NFP similarity required to confirm a Chromaprint match.
 DEFAULT_NFP_THRESHOLD = 0.90
 
+#: Default Chromaprint similarity range (inclusive lower bound) considered
+#: for a possible REMASTER, below the duplicate threshold.
+DEFAULT_REMASTER_CHROMAPRINT_MIN = 0.60
+
+#: Default NFP similarity required to confirm a REMASTER.
+DEFAULT_REMASTER_NFP_THRESHOLD = 0.90
+
 # Number of bits per raw Chromaprint sub-fingerprint (uint32).
 _BITS_PER_WORD = 32
 
@@ -293,3 +300,165 @@ def detect(
         )
 
     return {"track_a": path_a, "track_b": path_b, **result}
+
+
+def classify_relation(
+    chromaprint_score: float,
+    nfp_score: float | None = None,
+    duplicate_threshold: float = DEFAULT_CHROMAPRINT_THRESHOLD,
+    remaster_chromaprint_min: float = DEFAULT_REMASTER_CHROMAPRINT_MIN,
+    remaster_chromaprint_max: float = DEFAULT_CHROMAPRINT_THRESHOLD,
+    remaster_nfp_threshold: float = DEFAULT_REMASTER_NFP_THRESHOLD,
+) -> dict:
+    """Classify the relation between two tracks from their similarity scores.
+
+    REMASTER is the signature of NFP staying high while Chromaprint drops —
+    same structural content, different spectral texture (EQ, dynamics, a
+    light re-mix). It reuses the exact same two scores as :func:`detect` /
+    :func:`combine_scores`; no new audio analysis is involved.
+
+    Decision grid:
+
+    * ``chromaprint_score >= duplicate_threshold`` → ``"DUPLICATE"``
+      (regardless of ``nfp_score``). Confidence follows the same logic as
+      :func:`combine_scores`.
+    * ``remaster_chromaprint_min <= chromaprint_score < duplicate_threshold``
+      and ``nfp_score >= remaster_nfp_threshold`` → ``"REMASTER"``,
+      ``confidence = nfp_score * 0.9`` (a slight penalty: REMASTER is
+      inherently a less certain call than DUPLICATE — the chromaprint/nfp
+      gap could also come from a Chromaprint false positive on a very
+      repetitive track).
+    * ``remaster_chromaprint_min <= chromaprint_score < duplicate_threshold``
+      and (``nfp_score < remaster_nfp_threshold`` or ``nfp_score is None``)
+      → ``"NO_RELATION"`` (an unconfirmed fingerprint coincidence),
+      ``confidence = 0.0``.
+    * ``chromaprint_score < remaster_chromaprint_min`` → ``"NO_RELATION"``,
+      ``confidence = 0.0``, even when ``nfp_score`` is high: below this
+      floor the spectral link is considered too thin to trust, whatever NFP
+      suggests about structural similarity.
+
+    Args:
+        chromaprint_score: Chromaprint similarity in ``[0, 1]``.
+        nfp_score: Optional caller-provided neural-fingerprint similarity.
+        duplicate_threshold: Chromaprint match threshold (default 0.85).
+        remaster_chromaprint_min: Lower Chromaprint bound considered for a
+            REMASTER (default 0.60).
+        remaster_chromaprint_max: Upper Chromaprint bound considered for a
+            REMASTER, i.e. the duplicate threshold (default 0.85).
+        remaster_nfp_threshold: NFP confirmation threshold for REMASTER
+            (default 0.90).
+
+    Returns:
+        A dict with ``relation_type`` (``"DUPLICATE"`` | ``"REMASTER"`` |
+        ``"NO_RELATION"``), ``chromaprint_score``, ``nfp_score``,
+        ``score_gap`` (``nfp_score - chromaprint_score``, or ``None`` if
+        ``nfp_score`` is ``None``) and ``confidence``.
+    """
+    score_gap = None if nfp_score is None else nfp_score - chromaprint_score
+
+    if chromaprint_score >= duplicate_threshold:
+        duplicate = combine_scores(chromaprint_score, nfp_score)
+        return {
+            "relation_type": "DUPLICATE",
+            "chromaprint_score": chromaprint_score,
+            "nfp_score": nfp_score,
+            "score_gap": score_gap,
+            "confidence": duplicate["confidence"],
+        }
+
+    if remaster_chromaprint_min <= chromaprint_score < remaster_chromaprint_max:
+        if nfp_score is not None and nfp_score >= remaster_nfp_threshold:
+            return {
+                "relation_type": "REMASTER",
+                "chromaprint_score": chromaprint_score,
+                "nfp_score": nfp_score,
+                "score_gap": score_gap,
+                "confidence": nfp_score * 0.9,
+            }
+
+    return {
+        "relation_type": "NO_RELATION",
+        "chromaprint_score": chromaprint_score,
+        "nfp_score": nfp_score,
+        "score_gap": score_gap,
+        "confidence": 0.0,
+    }
+
+
+def detect_relation(
+    path_a: str,
+    path_b: str,
+    skip_decode_if_hash_match: bool = True,
+    nfp_score: float | None = None,
+    nfp_segments_matched: int | None = None,
+    nfp_coverage: float | None = None,
+    *,
+    max_duration: int = 120,
+    duplicate_threshold: float = DEFAULT_CHROMAPRINT_THRESHOLD,
+    remaster_chromaprint_min: float = DEFAULT_REMASTER_CHROMAPRINT_MIN,
+    remaster_chromaprint_max: float = DEFAULT_CHROMAPRINT_THRESHOLD,
+    remaster_nfp_threshold: float = DEFAULT_REMASTER_NFP_THRESHOLD,
+) -> dict:
+    """Classify whether two audio files are a DUPLICATE, REMASTER, or unrelated.
+
+    Same pipeline shape as :func:`detect`, but calls :func:`classify_relation`
+    instead of :func:`combine_scores`. A file hash match short-circuits
+    straight to ``relation_type="DUPLICATE"``, ``confidence=1.0``, without
+    ever computing a Chromaprint fingerprint (unless
+    ``skip_decode_if_hash_match`` is set to ``False``).
+
+    Args:
+        path_a: Path to the first audio file.
+        path_b: Path to the second audio file.
+        skip_decode_if_hash_match: When ``True`` (default), a file hash match
+            short-circuits straight to DUPLICATE without computing
+            Chromaprint fingerprints. Set to ``False`` to always run the
+            fingerprint/classification pipeline regardless of hash match.
+        nfp_score: Optional precomputed neural-fingerprint similarity.
+        nfp_segments_matched: Optional NFP metadata, passed through.
+        nfp_coverage: Optional NFP metadata, passed through.
+        max_duration: Seconds of leading audio to fingerprint (default 120).
+        duplicate_threshold: Chromaprint match threshold (default 0.85).
+        remaster_chromaprint_min: Lower Chromaprint bound for REMASTER
+            (default 0.60).
+        remaster_chromaprint_max: Upper Chromaprint bound for REMASTER
+            (default 0.85).
+        remaster_nfp_threshold: NFP confirmation threshold for REMASTER
+            (default 0.90).
+
+    Returns:
+        A dict with ``track_a``, ``track_b``, ``file_hash_match``,
+        ``chromaprint_score``, ``nfp_score``, ``nfp_segments_matched``,
+        ``nfp_coverage``, ``score_gap``, ``relation_type`` and ``confidence``.
+    """
+    hash_match = file_hash(path_a) == file_hash(path_b)
+
+    if hash_match and skip_decode_if_hash_match:
+        relation = {
+            "relation_type": "DUPLICATE",
+            "chromaprint_score": 1.0,
+            "nfp_score": nfp_score,
+            "score_gap": None if nfp_score is None else nfp_score - 1.0,
+            "confidence": 1.0,
+        }
+    else:
+        fp_a = compute_fingerprint(path_a, max_duration=max_duration)
+        fp_b = compute_fingerprint(path_b, max_duration=max_duration)
+        chromaprint_score = compare_fingerprints(fp_a, fp_b)
+        relation = classify_relation(
+            chromaprint_score,
+            nfp_score,
+            duplicate_threshold=duplicate_threshold,
+            remaster_chromaprint_min=remaster_chromaprint_min,
+            remaster_chromaprint_max=remaster_chromaprint_max,
+            remaster_nfp_threshold=remaster_nfp_threshold,
+        )
+
+    return {
+        "track_a": path_a,
+        "track_b": path_b,
+        "file_hash_match": hash_match,
+        "nfp_segments_matched": nfp_segments_matched,
+        "nfp_coverage": nfp_coverage,
+        **relation,
+    }

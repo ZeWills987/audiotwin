@@ -8,11 +8,15 @@ with the caller.
 from audiotwin.core import (
     DEFAULT_CHROMAPRINT_THRESHOLD,
     DEFAULT_NFP_THRESHOLD,
+    DEFAULT_REMASTER_CHROMAPRINT_MIN,
+    DEFAULT_REMASTER_NFP_THRESHOLD,
     AudioTooShortError,
+    classify_relation,
     combine_scores,
     compare_fingerprints,
     compute_fingerprint,
     detect,
+    detect_relation,
     file_hash,
 )
 
@@ -22,9 +26,13 @@ __all__ = [
     "AudioTooShortError",
     "DEFAULT_CHROMAPRINT_THRESHOLD",
     "DEFAULT_NFP_THRESHOLD",
+    "DEFAULT_REMASTER_CHROMAPRINT_MIN",
+    "DEFAULT_REMASTER_NFP_THRESHOLD",
+    "classify_relation",
     "combine_scores",
     "compare_fingerprints",
     "compute_fingerprint",
     "detect",
+    "detect_relation",
     "file_hash",
 ]
