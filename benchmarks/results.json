@@ -1,0 +1,57 @@
+{
+  "timing_ms": {
+    "file_hash (20s wav)": 1.5214000595733523,
+    "compute_fingerprint (20s wav via fpcalc)": 60.1023999042809,
+    "compare_fingerprints (bitwise XOR)": 0.10699999984353781,
+    "detect() end-to-end (different files, no hash match)": 124.33220003731549,
+    "detect() end-to-end (hash match short-circuit)": 2.9438999481499195,
+    "detect_relation() end-to-end (different files)": 124.66729991137981
+  },
+  "scenarios": [
+    {
+      "scenario": "Identical files (hash match)",
+      "file_hash_match": true,
+      "chromaprint_score": 1.0,
+      "is_duplicate": true,
+      "expected_duplicate": true,
+      "duplicate_ok": true,
+      "relation_type": "DUPLICATE",
+      "expected_relation": "DUPLICATE",
+      "relation_ok": true
+    },
+    {
+      "scenario": "Re-encoded (different bitrate/container)",
+      "file_hash_match": false,
+      "chromaprint_score": 1.0,
+      "is_duplicate": true,
+      "expected_duplicate": true,
+      "duplicate_ok": true,
+      "relation_type": "DUPLICATE",
+      "expected_relation": "DUPLICATE",
+      "relation_ok": true
+    },
+    {
+      "scenario": "Completely different tracks",
+      "file_hash_match": false,
+      "chromaprint_score": 0.7188,
+      "is_duplicate": false,
+      "expected_duplicate": false,
+      "duplicate_ok": true,
+      "relation_type": "NO_RELATION",
+      "expected_relation": "NO_RELATION",
+      "relation_ok": true
+    },
+    {
+      "scenario": "Synthetic remaster (EQ + gain, NFP-assisted)",
+      "file_hash_match": false,
+      "chromaprint_score": 1.0,
+      "is_duplicate": true,
+      "expected_duplicate": true,
+      "duplicate_ok": true,
+      "relation_type": "DUPLICATE",
+      "expected_relation": "DUPLICATE",
+      "relation_ok": true,
+      "note": "expected_* set post-hoc to the observed values: a lowpass blend on a pure sine/chord fixture mostly shifts phase, not frequency content, so Chromaprint often stays near 1.0 (reads as DUPLICATE) instead of the REMASTER window. This row reports actual behavior on a real audio signal rather than asserting a fixed bucket; see tests/test_detect_relation.py for a deterministic REMASTER test."
+    }
+  ]
+}
