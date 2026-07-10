@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "audiotwin"
+version = "0.1.0"
+description = "Lightweight detection of audio twins — two files that are the same master, regardless of encoding or source."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "William Tchang", email = "william.tchang.pro@gmail.com" }]
+keywords = ["audio", "fingerprint", "chromaprint", "acoustid", "duplicate", "deduplication"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+dependencies = [
+    "numpy>=1.23",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/ZeWills987/audiotwin"
+Repository = "https://github.com/ZeWills987/audiotwin"
+
+[project.scripts]
+audiotwin = "audiotwin.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/audiotwin"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
