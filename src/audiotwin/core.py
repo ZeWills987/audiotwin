@@ -743,3 +743,87 @@ def classify_edit(
         "edit_type_hint": edit_type_hint,
         "confidence": confidence,
     }
+
+
+# --- INSTRUMENTAL / KARAOKE pair classification ------------------------------
+
+#: Default content-similarity floor for an instrumental pair.
+DEFAULT_CONTENT_THRESHOLD = 0.70
+
+#: Default vocal coverage above which a track counts as "has vocals".
+DEFAULT_VOCAL_PRESENT_THRESHOLD = 0.40
+
+#: Default vocal coverage below which a track counts as "no vocals".
+DEFAULT_VOCAL_ABSENT_THRESHOLD = 0.10
+
+
+def classify_instrumental_pair(
+    content_similarity: float,
+    vocal_coverage_a: float,
+    vocal_coverage_b: float,
+    content_threshold: float = DEFAULT_CONTENT_THRESHOLD,
+    vocal_present_threshold: float = DEFAULT_VOCAL_PRESENT_THRESHOLD,
+    vocal_absent_threshold: float = DEFAULT_VOCAL_ABSENT_THRESHOLD,
+) -> dict:
+    """Detect the instrumental/karaoke pattern between two tracks.
+
+    The pattern: same musical content, one track has vocals, the other has
+    (almost) none. Pure score arithmetic — no audio is decoded and no new
+    dependency is involved.
+
+    ``content_similarity`` can be ANY ``[0, 1]`` measure of "same musical
+    content": the ``similarity`` from :func:`audiotwin.cover.cover_similarity`,
+    a landmark score, an NFP score — whatever the caller trusts. The vocal
+    coverages are measured by an external vocal-activity detector (this
+    library deliberately doesn't ship one).
+
+    Args:
+        content_similarity: ``[0, 1]`` same-musical-content measure.
+        vocal_coverage_a: ``[0, 1]`` share of track A with detected vocals.
+        vocal_coverage_b: ``[0, 1]`` share of track B with detected vocals.
+        content_threshold: Content-similarity floor (default 0.70).
+        vocal_present_threshold: Coverage above which a track "has vocals"
+            (default 0.40).
+        vocal_absent_threshold: Coverage below which a track "has no vocals"
+            (default 0.10).
+
+    Returns:
+        A dict with ``is_instrumental_pair``, ``vocal_track`` /
+        ``instrumental_track`` (``"a"`` | ``"b"`` | ``None``),
+        ``content_similarity``, ``vocal_gap``
+        (``|vocal_coverage_a - vocal_coverage_b|``) and ``confidence``
+        (``content_similarity * vocal_gap`` when the pattern is detected,
+        else ``0.0``).
+    """
+    vocal_gap = abs(vocal_coverage_a - vocal_coverage_b)
+
+    a_vocal_b_instrumental = (
+        vocal_coverage_a >= vocal_present_threshold
+        and vocal_coverage_b <= vocal_absent_threshold
+    )
+    b_vocal_a_instrumental = (
+        vocal_coverage_b >= vocal_present_threshold
+        and vocal_coverage_a <= vocal_absent_threshold
+    )
+
+    is_pair = content_similarity >= content_threshold and (
+        a_vocal_b_instrumental or b_vocal_a_instrumental
+    )
+
+    if is_pair:
+        vocal_track = "a" if a_vocal_b_instrumental else "b"
+        instrumental_track = "b" if a_vocal_b_instrumental else "a"
+        confidence = content_similarity * vocal_gap
+    else:
+        vocal_track = None
+        instrumental_track = None
+        confidence = 0.0
+
+    return {
+        "is_instrumental_pair": is_pair,
+        "vocal_track": vocal_track,
+        "instrumental_track": instrumental_track,
+        "content_similarity": content_similarity,
+        "vocal_gap": vocal_gap,
+        "confidence": confidence,
+    }
