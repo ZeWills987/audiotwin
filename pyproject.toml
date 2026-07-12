@@ -26,6 +26,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+landmark = [
+    "scipy>=1.10",
+]
+cover = [
+    "librosa>=0.10",
+]
+all = [
+    "scipy>=1.10",
+    "librosa>=0.10",
+]
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",
@@ -50,3 +60,6 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: performance tests (deselect with '-m \"not slow\"')",
+]
