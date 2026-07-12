@@ -11,13 +11,16 @@ from audiotwin.core import (
     DEFAULT_REMASTER_CHROMAPRINT_MIN,
     DEFAULT_REMASTER_NFP_THRESHOLD,
     AudioTooShortError,
+    classify_edit,
     classify_relation,
     combine_scores,
     compare_fingerprints,
+    compute_coverage,
     compute_fingerprint,
     detect,
     detect_relation,
     file_hash,
+    fit_temporal_alignment,
 )
 
 __version__ = "0.1.0"
@@ -28,11 +31,14 @@ __all__ = [
     "DEFAULT_NFP_THRESHOLD",
     "DEFAULT_REMASTER_CHROMAPRINT_MIN",
     "DEFAULT_REMASTER_NFP_THRESHOLD",
+    "classify_edit",
     "classify_relation",
     "combine_scores",
     "compare_fingerprints",
+    "compute_coverage",
     "compute_fingerprint",
     "detect",
     "detect_relation",
     "file_hash",
+    "fit_temporal_alignment",
 ]

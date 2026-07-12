@@ -22,7 +22,6 @@ import soundfile as sf
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from audiotwin import (  # noqa: E402
-    classify_relation,
     compare_fingerprints,
     compute_fingerprint,
     detect,

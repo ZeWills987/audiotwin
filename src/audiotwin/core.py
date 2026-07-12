@@ -462,3 +462,284 @@ def detect_relation(
         "nfp_coverage": nfp_coverage,
         **relation,
     }
+
+
+# --- EDIT classification -----------------------------------------------------
+#
+# Unlike detect()/detect_relation(), the functions below never decode audio.
+# They operate on match points (t_query, t_ref, score) already produced by an
+# external segment-matching system (e.g. a neural fingerprinter or landmark
+# matcher), and infer the temporal relation geometrically.
+#
+# RANSAC is implemented by hand with numpy rather than via
+# sklearn.linear_model.RANSACRegressor: scikit-learn pulls in scipy, adding
+# ~46 MB of wheels beyond numpy (measured: scipy 37 MB + sklearn 8 MB +
+# joblib/threadpoolctl), which conflicts with this repo's install-in-seconds
+# goal — for fitting a 2-parameter line, a manual implementation is tiny and
+# dependency-free.
+
+#: Default minimum number of inlier match points for a trustworthy fit.
+DEFAULT_MIN_INLIERS = 6
+
+#: Default plausible slope (speed factor) range for an edit relation.
+DEFAULT_SLOPE_BOUNDS = (0.5, 2.0)
+
+#: Default residual tolerance (seconds) for a point to count as an inlier.
+DEFAULT_RESIDUAL_THRESHOLD = 0.5
+
+#: Default slope deviation from 1.0 beyond which speed is considered changed.
+DEFAULT_SPEED_CHANGE_EPSILON = 0.03
+
+#: Default coverage above which a track side is considered fully covered.
+DEFAULT_FULL_COVERAGE_THRESHOLD = 0.90
+
+#: Default max gap (seconds) between consecutive inliers on the query axis
+#: for the inlier set to still count as consecutive.
+DEFAULT_MAX_CONSECUTIVE_GAP = 5.0
+
+
+def fit_temporal_alignment(
+    matches: list[tuple[float, float, float]],
+    min_inliers: int = DEFAULT_MIN_INLIERS,
+    slope_bounds: tuple[float, float] = DEFAULT_SLOPE_BOUNDS,
+    residual_threshold: float = DEFAULT_RESIDUAL_THRESHOLD,
+    ransac_iterations: int = 1000,
+    random_seed: int | None = None,
+) -> dict:
+    """Fit ``t_ref = slope * t_query + intercept`` on match points via RANSAC.
+
+    Each match is a ``(t_query, t_ref, match_score)`` triple from an external
+    segment-matching system. The slope is the speed factor between the two
+    tracks, the intercept the time offset.
+
+    Args:
+        matches: Match points as ``(t_query, t_ref, match_score)`` triples.
+        min_inliers: Minimum inliers for the fit to succeed (default 6).
+            When ``len(matches) < min_inliers``, the function fails fast
+            without running RANSAC at all.
+        slope_bounds: Plausible ``(min, max)`` slope range (default 0.5–2.0);
+            fits outside it are rejected.
+        residual_threshold: Max ``|t_ref - predicted|`` in seconds for a
+            point to count as an inlier (default 0.5).
+        ransac_iterations: Number of RANSAC sampling rounds (default 1000).
+        random_seed: Optional seed for reproducible sampling.
+
+    Returns:
+        A dict with ``slope``, ``intercept``, ``inlier_count``,
+        ``outlier_count``, ``inlier_indices`` and ``fit_succeeded``. On
+        failure, ``slope``/``intercept`` are ``0.0`` and ``inlier_indices``
+        is empty.
+    """
+    failure = {
+        "slope": 0.0,
+        "intercept": 0.0,
+        "inlier_count": 0,
+        "outlier_count": len(matches),
+        "inlier_indices": [],
+        "fit_succeeded": False,
+    }
+
+    if len(matches) < min_inliers:
+        return failure
+
+    points = np.asarray(matches, dtype=np.float64)
+    t_query, t_ref = points[:, 0], points[:, 1]
+    n = len(points)
+    rng = np.random.default_rng(random_seed)
+    slope_min, slope_max = slope_bounds
+
+    best_inliers: np.ndarray | None = None
+    best_count = 0
+
+    for _ in range(ransac_iterations):
+        i, j = rng.choice(n, size=2, replace=False)
+        dt = t_query[j] - t_query[i]
+        if dt == 0.0:
+            continue
+        slope = (t_ref[j] - t_ref[i]) / dt
+        if not (slope_min <= slope <= slope_max):
+            continue
+        intercept = t_ref[i] - slope * t_query[i]
+        residuals = np.abs(t_ref - (slope * t_query + intercept))
+        inliers = residuals <= residual_threshold
+        count = int(inliers.sum())
+        if count > best_count:
+            best_count = count
+            best_inliers = inliers
+
+    if best_inliers is None or best_count < min_inliers:
+        return failure
+
+    # Refine with a least-squares fit on the consensus set, then recompute
+    # the inlier set against the refined line.
+    slope, intercept = np.polyfit(t_query[best_inliers], t_ref[best_inliers], deg=1)
+    if not (slope_min <= slope <= slope_max):
+        return failure
+
+    residuals = np.abs(t_ref - (slope * t_query + intercept))
+    inliers = residuals <= residual_threshold
+    inlier_count = int(inliers.sum())
+    if inlier_count < min_inliers:
+        return failure
+
+    return {
+        "slope": float(slope),
+        "intercept": float(intercept),
+        "inlier_count": inlier_count,
+        "outlier_count": n - inlier_count,
+        "inlier_indices": [int(k) for k in np.flatnonzero(inliers)],
+        "fit_succeeded": True,
+    }
+
+
+def compute_coverage(
+    matches: list[tuple[float, float, float]],
+    inlier_indices: list[int],
+    query_duration: float,
+    ref_duration: float,
+    max_consecutive_gap: float = DEFAULT_MAX_CONSECUTIVE_GAP,
+) -> dict:
+    """Compute how much of each track the inlier match points span.
+
+    Coverage is the min→max temporal extent of the inlier points on each
+    axis, divided by that track's total duration.
+
+    Args:
+        matches: Match points as ``(t_query, t_ref, match_score)`` triples.
+        inlier_indices: Indices into ``matches`` of the inlier points (as
+            returned by :func:`fit_temporal_alignment`).
+        query_duration: Total duration of the query track, in seconds.
+        ref_duration: Total duration of the reference track, in seconds.
+        max_consecutive_gap: Max gap in seconds between consecutive inliers
+            (sorted by ``t_query``) for ``is_consecutive`` to hold
+            (default 5.0).
+
+    Returns:
+        A dict with ``coverage_query``, ``coverage_ref`` (both ``0.0–1.0``)
+        and ``is_consecutive``.
+    """
+    if not inlier_indices:
+        return {"coverage_query": 0.0, "coverage_ref": 0.0, "is_consecutive": False}
+
+    points = np.asarray(matches, dtype=np.float64)[inlier_indices]
+    t_query, t_ref = points[:, 0], points[:, 1]
+
+    coverage_query = float(t_query.max() - t_query.min()) / query_duration
+    coverage_ref = float(t_ref.max() - t_ref.min()) / ref_duration
+
+    sorted_query = np.sort(t_query)
+    gaps = np.diff(sorted_query)
+    is_consecutive = bool(len(gaps) == 0 or gaps.max() <= max_consecutive_gap)
+
+    return {
+        "coverage_query": min(1.0, coverage_query),
+        "coverage_ref": min(1.0, coverage_ref),
+        "is_consecutive": is_consecutive,
+    }
+
+
+def classify_edit(
+    matches: list[tuple[float, float, float]],
+    query_duration: float,
+    ref_duration: float,
+    min_inliers: int = DEFAULT_MIN_INLIERS,
+    slope_bounds: tuple[float, float] = DEFAULT_SLOPE_BOUNDS,
+    residual_threshold: float = DEFAULT_RESIDUAL_THRESHOLD,
+    speed_change_epsilon: float = DEFAULT_SPEED_CHANGE_EPSILON,
+    full_coverage_threshold: float = DEFAULT_FULL_COVERAGE_THRESHOLD,
+    *,
+    ransac_iterations: int = 1000,
+    random_seed: int | None = None,
+) -> dict:
+    """Derive an edit-type hint from segment match points.
+
+    Combines :func:`fit_temporal_alignment` and :func:`compute_coverage`.
+    No audio is decoded — the inputs are match points already produced by an
+    external segment-matching system.
+
+    Decision grid:
+
+    * fit failed → ``"no_relation"``
+    * ``|slope - 1| > speed_change_epsilon`` → ``"speed_change"``
+      (sped-up/slowed: tempo and pitch move together)
+    * slope ≈ 1 and either side's coverage below
+      ``full_coverage_threshold`` → ``"trim_or_extend"``
+      (radio edit, extended version, ...)
+    * slope ≈ 1 and both coverages ≥ ``full_coverage_threshold``
+      → ``"full_match"``. This means **no edit detected — the temporal
+      structure is intact**; the pair is better characterized as
+      DUPLICATE/REMASTER territory, which the caller should corroborate
+      via :func:`classify_relation`.
+
+    Confidence: ``0.0`` for ``"no_relation"``; otherwise
+    ``min(1.0, inlier_ratio * (inlier_count / min_inliers))``, i.e. the
+    inlier proportion scaled by how far past the bare minimum the absolute
+    inlier count goes. This deliberately favors "20 inliers out of 25"
+    (ratio 0.8, evidence factor 20/6 → capped 1.0) over "6 inliers out of
+    6" (perfect ratio but evidence factor exactly 1.0 → confidence 1.0
+    only because both factors are maxed; with any outliers at few points,
+    confidence drops fast) — more absolute evidence beats a perfect ratio
+    on a tiny sample.
+
+    Args:
+        matches: Match points as ``(t_query, t_ref, match_score)`` triples.
+        query_duration: Total duration of the query track, in seconds.
+        ref_duration: Total duration of the reference track, in seconds.
+        min_inliers: Minimum inliers for a trustworthy fit (default 6).
+        slope_bounds: Plausible slope range (default 0.5–2.0).
+        residual_threshold: Inlier tolerance in seconds (default 0.5).
+        speed_change_epsilon: Slope deviation from 1.0 beyond which speed is
+            considered changed (default 0.03, i.e. 3%).
+        full_coverage_threshold: Coverage above which a side counts as fully
+            covered (default 0.90).
+        ransac_iterations: RANSAC sampling rounds (default 1000).
+        random_seed: Optional seed for reproducible sampling.
+
+    Returns:
+        A dict with ``slope``, ``intercept``, ``inlier_count``,
+        ``outlier_count``, ``coverage_query``, ``coverage_ref``,
+        ``is_consecutive``, ``edit_type_hint`` (``"speed_change"`` |
+        ``"trim_or_extend"`` | ``"full_match"`` | ``"no_relation"``) and
+        ``confidence``.
+    """
+    fit = fit_temporal_alignment(
+        matches,
+        min_inliers=min_inliers,
+        slope_bounds=slope_bounds,
+        residual_threshold=residual_threshold,
+        ransac_iterations=ransac_iterations,
+        random_seed=random_seed,
+    )
+    coverage = compute_coverage(
+        matches, fit["inlier_indices"], query_duration, ref_duration
+    )
+
+    if not fit["fit_succeeded"]:
+        edit_type_hint = "no_relation"
+        confidence = 0.0
+    else:
+        if abs(fit["slope"] - 1.0) > speed_change_epsilon:
+            edit_type_hint = "speed_change"
+        elif (
+            coverage["coverage_query"] < full_coverage_threshold
+            or coverage["coverage_ref"] < full_coverage_threshold
+        ):
+            edit_type_hint = "trim_or_extend"
+        else:
+            edit_type_hint = "full_match"
+
+        total = fit["inlier_count"] + fit["outlier_count"]
+        inlier_ratio = fit["inlier_count"] / total
+        confidence = min(1.0, inlier_ratio * (fit["inlier_count"] / min_inliers))
+
+    return {
+        "slope": fit["slope"],
+        "intercept": fit["intercept"],
+        "inlier_count": fit["inlier_count"],
+        "outlier_count": fit["outlier_count"],
+        "coverage_query": coverage["coverage_query"],
+        "coverage_ref": coverage["coverage_ref"],
+        "is_consecutive": coverage["is_consecutive"],
+        "edit_type_hint": edit_type_hint,
+        "confidence": confidence,
+    }

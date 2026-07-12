@@ -67,6 +67,7 @@ print(result["is_duplicate"], result["confidence"])
 audiotwin compare track_a.mp3 track_b.flac         # human-readable
 audiotwin compare track_a.mp3 track_b.flac --json  # machine-readable
 audiotwin classify track_a.mp3 track_b.flac --json # DUPLICATE / REMASTER / NO_RELATION
+audiotwin classify-edit matches.json --query-duration 180 --ref-duration 245
 audiotwin fingerprint track.mp3                    # just the fingerprint
 ```
 
@@ -150,6 +151,75 @@ Every threshold in the grid is a keyword parameter with the defaults shown
 above — pass `duplicate_threshold`, `remaster_chromaprint_min`,
 `remaster_chromaprint_max`, or `remaster_nfp_threshold` to tune it.
 
+## Classifying EDIT relations (speed change, trim, extend)
+
+`classify_edit(...)` recognizes **temporal-structure edits**: cuts (radio
+edit), additions (extended version), and uniform speed changes
+(sped-up/slowed/nightcore — tempo and pitch moving together).
+
+Unlike everything above, this function **never decodes audio**. It takes
+match points already computed by an external segment-matching system — any
+segment-level fingerprinter that outputs time-aligned correspondences works
+(e.g. a neural fingerprinter in the spirit of NFP, Chang et al. 2021; there
+is no dependency on any specific one). It then fits
+`t_ref = slope × t_query + intercept` with RANSAC and reads the relation off
+the geometry: the slope is the speed factor, the coverage says how much of
+each track participates.
+
+### Input format
+
+Each match point is a `(t_query, t_ref, match_score)` triple — a segment at
+`t_query` seconds in the query track matched a segment at `t_ref` seconds in
+the reference track. As JSON (for the CLI):
+
+```json
+[
+  [0.0,  30.0, 0.98],
+  [5.0,  35.1, 0.95],
+  [10.0, 40.0, 0.97],
+  [15.0, 44.9, 0.96],
+  [20.0, 50.1, 0.99],
+  [25.0, 55.0, 0.94]
+]
+```
+
+### Decision grid
+
+| Fit result | Coverage | `edit_type_hint` |
+|---|---|---|
+| failed (too few points, no consistent line, slope out of bounds) | — | `no_relation` |
+| `\|slope − 1\| >` `speed_change_epsilon` (0.03) | any | `speed_change` |
+| slope ≈ 1 | either side `<` `full_coverage_threshold` (0.90) | `trim_or_extend` |
+| slope ≈ 1 | both sides `≥` `full_coverage_threshold` | `full_match` |
+
+`full_match` means **no edit detected — the temporal structure is intact**.
+That pair is DUPLICATE/REMASTER territory: corroborate it with
+`classify_relation()` rather than treating it as an edit.
+
+### Usage
+
+```python
+from audiotwin import classify_edit
+
+result = classify_edit(matches, query_duration=180.0, ref_duration=245.0)
+print(result["edit_type_hint"], result["slope"], result["confidence"])
+```
+
+```bash
+audiotwin classify-edit matches.json --query-duration 180 --ref-duration 245 --json
+```
+
+All thresholds (`min_inliers`, `slope_bounds`, `residual_threshold`,
+`speed_change_epsilon`, `full_coverage_threshold`) are parameters with the
+defaults shown above. Pass `random_seed` for reproducible RANSAC runs.
+
+**Why no scikit-learn?** RANSAC is implemented by hand with numpy.
+`sklearn.linear_model.RANSACRegressor` would have pulled in scipy — measured
+at ~46 MB of additional wheels (scipy 37 MB + sklearn 8 MB + joblib/
+threadpoolctl) — which conflicts with this repo's install-in-seconds goal.
+For fitting a 2-parameter line, the manual implementation is ~40 lines and
+dependency-free.
+
 ## Limitations
 
 Be honest about what this does and does not do:
@@ -168,6 +238,11 @@ Be honest about what this does and does not do:
   can be fooled by very similar-sounding but distinct audio. Rough precision:
   **~98% with Chromaprint alone vs. ~99.5% when an NFP score is supplied.** If
   you have a neural fingerprinter available, feed its score in.
+- **`edit_type_hint` is a geometric signal, not a final verdict.**
+  Distinguishing radio edit from extended version, or nightcore from generic
+  speed-up, requires additional context (e.g. title parsing, duration
+  comparison) that this library intentionally does not attempt. It also
+  depends entirely on the quality of the caller-supplied match points.
 
 ## Scope
 
