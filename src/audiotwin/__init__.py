@@ -22,6 +22,7 @@ from audiotwin.core import (
     detect_relation,
     file_hash,
     fit_temporal_alignment,
+    suggest_relation,
 )
 
 __version__ = "0.1.0"
@@ -43,4 +44,5 @@ __all__ = [
     "detect_relation",
     "file_hash",
     "fit_temporal_alignment",
+    "suggest_relation",
 ]
