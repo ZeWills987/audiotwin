@@ -1,40 +1,60 @@
 # audiotwin
 
-Lightweight, open-source (MIT) detection of **audio twins** — two files that
-are the *same master recording*, regardless of encoding, bitrate, or source.
+Lightweight, open-source (MIT) toolkit for detecting **relations between
+audio files**: same master, remaster, edit, sample, mashup, cover,
+instrumental.
 
-`audiotwin` takes two audio files and returns **raw similarity scores**. It is
-deliberately unopinionated: it makes no business decisions (dedup merging,
-canonical-track selection, thresholds tuned for your catalog). Those stay with
-the caller. Think of it as a fast pre-filter for duplicate detection in a
-larger pipeline.
+`audiotwin` takes audio files (or precomputed features) and returns **raw
+analysis data** — scores, hints, timestamps. It is deliberately
+unopinionated: it makes no business decisions (dedup merging,
+canonical-track selection, final verdicts tuned for your catalog). Those
+stay with the caller. Think of it as the analysis layer of a larger
+pipeline.
+
+## Modules × relations
+
+| Relation | What it means | Module / function | Extra needed |
+|---|---|---|---|
+| **DUPLICATE** | Same master, any encoding | `detect()` | core |
+| **REMASTER** | Same recording, reworked signal (EQ/dynamics) | `classify_relation()` / `detect_relation()` | core |
+| **EDIT** | Same recording, altered timeline (trim/extend/speed) | `classify_edit()` on caller-supplied match points | core |
+| **SAMPLE** | Fragment reused inside another track | `landmark.LandmarkIndex` + `classify_sample()` | `[landmark]` |
+| **MASHUP** | Fragments from several tracks combined | `landmark` + `classify_mashup()` | `[landmark]` |
+| **COVER** | Same composition, new performance | `cover.cover_similarity()` | `[cover]` |
+| **INSTRUMENTAL** | Same content, vocals present vs absent | `classify_instrumental_pair()` | core |
+| *(aggregation)* | Ordered hypotheses from any of the above | `suggest_relation()` | core |
 
 ## Installation
 
 ```bash
-pip install audiotwin
+pip install audiotwin              # core: DUPLICATE/REMASTER/EDIT/INSTRUMENTAL
+pip install "audiotwin[landmark]"  # + SAMPLE/MASHUP (adds scipy)
+pip install "audiotwin[cover]"     # + COVER (adds librosa)
+pip install "audiotwin[all]"       # everything
 ```
 
-`audiotwin` relies on the **`fpcalc`** command-line tool (from Chromaprint), a
-system dependency you must install separately:
+System dependencies:
 
 ```bash
 # Debian / Ubuntu
-sudo apt-get install libchromaprint-tools
+sudo apt-get install libchromaprint-tools ffmpeg
 
 # macOS (Homebrew)
-brew install chromaprint
+brew install chromaprint ffmpeg
 
 # Windows
 winget install --id AcoustID.Chromaprint -e
+winget install --id Gyan.FFmpeg -e
 ```
 
-`fpcalc` bundles its own audio decoder, so no separate `ffmpeg` install or
-Python bindings to `libchromaprint` are required — `audiotwin` only shells out
-to the `fpcalc` binary, which keeps things portable (Chromaprint no longer
-ships a Windows `.dll`, only the standalone executable). If `fpcalc` isn't on
-`PATH`, point `audiotwin` at it via the `AUDIOTWIN_FPCALC` environment
-variable.
+- **`fpcalc`** (Chromaprint) powers the DUPLICATE/REMASTER pipeline. It
+  bundles its own decoder, so no Python bindings to `libchromaprint` are
+  needed — `audiotwin` shells out to the binary (Chromaprint no longer
+  ships a Windows `.dll`). Override the lookup with the `AUDIOTWIN_FPCALC`
+  environment variable.
+- **`ffmpeg`** powers everything else: `audiotwin.audio.decode_audio`
+  streams PCM from ffmpeg entirely in memory (no converted files on disk).
+  Override with `AUDIOTWIN_FFMPEG`.
 
 ## Quick start
 
@@ -45,33 +65,19 @@ result = detect("track_a.mp3", "track_b.flac")
 print(result["is_duplicate"], result["confidence"])
 ```
 
-`detect` returns:
-
-```python
-{
-    "track_a": "track_a.mp3",
-    "track_b": "track_b.flac",
-    "file_hash_match": False,
-    "chromaprint_score": 0.97,       # 0.0–1.0
-    "nfp_score": None,
-    "nfp_segments_matched": None,
-    "nfp_coverage": None,
-    "is_duplicate": True,
-    "confidence": 0.873,             # 0.0–1.0
-}
-```
-
 ### CLI
 
 ```bash
-audiotwin compare track_a.mp3 track_b.flac         # human-readable
-audiotwin compare track_a.mp3 track_b.flac --json  # machine-readable
-audiotwin classify track_a.mp3 track_b.flac --json # DUPLICATE / REMASTER / NO_RELATION
+audiotwin compare a.mp3 b.mp3 --json               # DUPLICATE pipeline
+audiotwin classify a.mp3 b.mp3 --json              # DUPLICATE / REMASTER / NO_RELATION
 audiotwin classify-edit matches.json --query-duration 180 --ref-duration 245
-audiotwin fingerprint track.mp3                    # just the fingerprint
+audiotwin landmark add index.db my_track track.mp3
+audiotwin landmark query index.db query.mp3 [--pitch-range 2] [--json]
+audiotwin cover compare a.mp3 b.mp3 --json
+audiotwin fingerprint track.mp3
 ```
 
-## The pipeline — three levels
+## The DUPLICATE pipeline — three levels
 
 `audiotwin` runs cheapest-signal-first and short-circuits as soon as it can.
 
@@ -136,10 +142,6 @@ content, different spectral texture.
 A file hash match still short-circuits everything, straight to `DUPLICATE`
 with `confidence = 1.0`.
 
-```bash
-audiotwin classify track_a.mp3 track_b_remaster.mp3 --nfp-score 0.95 --json
-```
-
 ```python
 from audiotwin import detect_relation
 
@@ -148,8 +150,7 @@ print(result["relation_type"], result["score_gap"])  # "REMASTER" 0.25
 ```
 
 Every threshold in the grid is a keyword parameter with the defaults shown
-above — pass `duplicate_threshold`, `remaster_chromaprint_min`,
-`remaster_chromaprint_max`, or `remaster_nfp_threshold` to tune it.
+above.
 
 ## Classifying EDIT relations (speed change, trim, extend)
 
@@ -157,20 +158,22 @@ above — pass `duplicate_threshold`, `remaster_chromaprint_min`,
 edit), additions (extended version), and uniform speed changes
 (sped-up/slowed/nightcore — tempo and pitch moving together).
 
-Unlike everything above, this function **never decodes audio**. It takes
-match points already computed by an external segment-matching system — any
-segment-level fingerprinter that outputs time-aligned correspondences works
-(e.g. a neural fingerprinter in the spirit of NFP, Chang et al. 2021; there
-is no dependency on any specific one). It then fits
-`t_ref = slope × t_query + intercept` with RANSAC and reads the relation off
-the geometry: the slope is the speed factor, the coverage says how much of
-each track participates.
+This function **never decodes audio**. It takes match points already
+computed by an external segment-matching system — any segment-level
+fingerprinter that outputs time-aligned correspondences works (e.g. a
+neural fingerprinter in the spirit of NFP, Chang et al. 2021; there is no
+dependency on any specific one). It fits `t_ref = slope × t_query +
+intercept` with RANSAC and reads the relation off the geometry: the slope
+is the speed factor, the coverage says how much of each track participates.
+
+**The landmark module produces this exact format**: `match_points` from
+`LandmarkIndex.query()` feed directly into `classify_edit()` /
+`fit_temporal_alignment()`.
 
 ### Input format
 
-Each match point is a `(t_query, t_ref, match_score)` triple — a segment at
-`t_query` seconds in the query track matched a segment at `t_ref` seconds in
-the reference track. As JSON (for the CLI):
+Each match point is a `(t_query, t_ref, match_score)` triple. As JSON (for
+the CLI):
 
 ```json
 [
@@ -196,63 +199,183 @@ the reference track. As JSON (for the CLI):
 That pair is DUPLICATE/REMASTER territory: corroborate it with
 `classify_relation()` rather than treating it as an edit.
 
-### Usage
-
-```python
-from audiotwin import classify_edit
-
-result = classify_edit(matches, query_duration=180.0, ref_duration=245.0)
-print(result["edit_type_hint"], result["slope"], result["confidence"])
-```
-
-```bash
-audiotwin classify-edit matches.json --query-duration 180 --ref-duration 245 --json
-```
-
-All thresholds (`min_inliers`, `slope_bounds`, `residual_threshold`,
-`speed_change_epsilon`, `full_coverage_threshold`) are parameters with the
-defaults shown above. Pass `random_seed` for reproducible RANSAC runs.
-
 **Why no scikit-learn?** RANSAC is implemented by hand with numpy.
 `sklearn.linear_model.RANSACRegressor` would have pulled in scipy — measured
-at ~46 MB of additional wheels (scipy 37 MB + sklearn 8 MB + joblib/
-threadpoolctl) — which conflicts with this repo's install-in-seconds goal.
-For fitting a 2-parameter line, the manual implementation is ~40 lines and
-dependency-free.
+at ~46 MB of additional wheels — which conflicts with the core's
+install-in-seconds goal. For fitting a 2-parameter line, the manual
+implementation is ~40 lines and dependency-free. (The `[landmark]` extra
+does bring scipy in, but only for users who opt into that module.)
+
+## Landmark fingerprinting (SAMPLE and MASHUP) — `[landmark]` extra
+
+`audiotwin.landmark` implements spectral-peak fingerprinting in the spirit
+of **Wang 2003** (the Shazam paper): STFT peaks paired into 32-bit hashes,
+matched through an offset histogram. Robust to noise and additive mixing,
+and returns the **exact position** of each correspondence.
+
+```python
+from audiotwin.landmark import LandmarkIndex, classify_sample, classify_mashup
+
+index = LandmarkIndex("catalog.db")          # or ":memory:"
+index.add_track("original", "original.mp3")
+
+results = index.query("suspect.mp3")
+top = results[0]
+print(top["offset_seconds"], top["aligned_hashes"], top["score"])
+
+# Is the match a localized fragment (SAMPLE) or a global relation?
+sample = classify_sample(top, query_duration=210.0, ref_duration=180.0)
+
+# Do several distinct indexed tracks cover disjoint regions (MASHUP)?
+mashup = classify_mashup(results, query_duration=210.0)
+```
+
+- `query(..., pitch_shift_range=2)` also tries pitch-shifted variants
+  (±1..±2 semitones; needs the `[cover]` extra for librosa) and reports
+  `pitch_shift_semitones` per match.
+- `match_points` in each result plugs straight into `classify_edit()`.
+
+## Cover similarity (COVER) — `[cover]` extra
+
+`audiotwin.cover` implements the classic chroma pipeline (a simplified
+**Serrà 2009**): harmonic separation → CQT chroma → **Optimal
+Transposition Index** (key alignment) → **DTW** (tempo absorption).
+
+```python
+from audiotwin.cover import cover_similarity
+
+result = cover_similarity("original.mp3", "cover_version.mp3")
+print(result["similarity"])               # 0.0–1.0
+print(result["transposition_semitones"])  # how far B is transposed up vs A
+print(result["duration_ratio"])           # free global tempo hint
+```
+
+Callers that cache chroma features can skip re-decoding with
+`cover_similarity_from_chroma(chroma_a, chroma_b)` (identical scoring), and
+compute features via `compute_chroma(audio, sr)`.
+
+## Instrumental / karaoke pairs (INSTRUMENTAL)
+
+`classify_instrumental_pair(...)` detects the pattern *same musical
+content, one track has vocals, the other doesn't*. Pure score arithmetic,
+core-only:
+
+```python
+from audiotwin import classify_instrumental_pair
+
+r = classify_instrumental_pair(
+    content_similarity=0.85,   # any [0,1] "same content" measure:
+                               # cover similarity, landmark score, NFP...
+    vocal_coverage_a=0.70,     # from an external vocal-activity detector
+    vocal_coverage_b=0.03,
+)
+print(r["is_instrumental_pair"], r["vocal_track"])  # True "a"
+```
+
+audiotwin deliberately ships no vocal detector — feed it coverages from
+whatever VAD you trust.
+
+## Aggregating everything: `suggest_relation()`
+
+```python
+from audiotwin import suggest_relation
+
+verdict = suggest_relation(
+    chromaprint_score=0.72,
+    nfp_score=0.95,
+    cover_result=cover_result,        # all inputs optional
+)
+for h in verdict["hypotheses"]:
+    print(h["relation"], h["confidence"], h["evidence"])
+```
+
+Hypotheses are ordered by the documented priority (`DUPLICATE > REMASTER >
+MASHUP > SAMPLE > EDIT > INSTRUMENTAL > COVER`), each carrying its source
+confidence.
+
+> **This is a rule-based convenience heuristic, not a trained classifier.**
+> Production systems should train their own fusion on their own data.
+
+## The "stems" pattern
+
+Every function in this toolkit takes *any* audio file — including **stems**
+produced by an external source separator (e.g. audio-separator or Demucs;
+audiotwin has no dependency on either).
+
+This matters for remix detection: a remix that keeps the original vocals
+over a brand-new instrumentation often **fails** full-mix matching (the
+instrumentation dominates the spectrum), but succeeds when you fingerprint
+the **isolated vocal stems**:
+
+```python
+from audiotwin.landmark import LandmarkIndex
+
+# Stems produced upstream by your separator of choice:
+#   original_vocals.wav   (from the original track)
+#   suspect_vocals.wav    (from the suspected remix)
+
+index = LandmarkIndex(":memory:")
+index.add_track("original_vocals", "original_vocals.wav")
+matches = index.query("suspect_vocals.wav")
+# A strong offset-consistent match on vocal stems + a weak full-mix match
+# is the classic signature of a remix reusing the original vocal take.
+```
+
+The same applies to `cover_similarity` on instrumental stems (chord
+progression without vocal interference), or `classify_edit` on match points
+computed from stems.
 
 ## Limitations
 
-Be honest about what this does and does not do:
+Honest per-module limits:
 
-- **Same master, or a remaster of it, only.** `audiotwin` detects the *same
-  recording* re-encoded, re-sourced, or remastered. It does **not** detect
-  covers, live versions, or remixes — those change the structural content
-  itself and will score low by design.
-- **REMASTER classification needs an NFP score.** Without one, `audiotwin`
-  can only tell DUPLICATE from "not confirmed" — it cannot distinguish
-  REMASTER from an unrelated track with a coincidentally similar spectral
-  fingerprint.
-- **≥ 10 seconds of audio required.** Shorter clips don't yield a reliable
-  fingerprint; `compute_fingerprint` raises `AudioTooShortError`.
-- **NFP is optional but improves precision.** Chromaprint alone is strong but
-  can be fooled by very similar-sounding but distinct audio. Rough precision:
-  **~98% with Chromaprint alone vs. ~99.5% when an NFP score is supplied.** If
-  you have a neural fingerprinter available, feed its score in.
-- **`edit_type_hint` is a geometric signal, not a final verdict.**
-  Distinguishing radio edit from extended version, or nightcore from generic
-  speed-up, requires additional context (e.g. title parsing, duration
-  comparison) that this library intentionally does not attempt. It also
-  depends entirely on the quality of the caller-supplied match points.
+- **DUPLICATE/REMASTER (Chromaprint + NFP)**
+  - Detects the *same recording* only — covers/live/remixes score low by
+    design. ≥ 10 seconds of audio required (`AudioTooShortError` below).
+  - Without a caller-supplied NFP score, precision is slightly lower
+    (~98% vs ~99.5% with NFP) and REMASTER cannot be distinguished from an
+    unrelated near-miss.
+- **EDIT (`classify_edit`)**
+  - `edit_type_hint` is a geometric signal, not a final verdict —
+    distinguishing radio edit from extended version, or nightcore from
+    generic speed-up, needs context (title parsing, duration comparison)
+    this library intentionally does not attempt. Quality depends entirely
+    on the caller-supplied match points.
+- **landmark (SAMPLE/MASHUP)**
+  - Not robust to pitch shifting or time stretching by itself;
+    `pitch_shift_range` compensates but remains a coarse ±N-semitone grid
+    with no time-stretch handling.
+  - Heavily overdubbed samples (e.g. a drum break buried under new layers)
+    are hard to catch — additive-mixing robustness has limits.
+  - The landmark family generally underperforms neural approaches on
+    strongly transformed audio.
+- **cover**
+  - A classical method — precision is below recent deep-learning cover
+    detectors. Microtonality and complex polyrhythms are not handled. The
+    score is only as good as the chroma features.
+- **suggest_relation**
+  - A rule-based heuristic, not a trained model.
+
+### What audiotwin deliberately does not implement
+
+Neural audio fingerprinting and learned sample identification outperform
+the classical methods here on transformed audio; they also carry model
+weights and GPU-sized dependencies that don't belong in this toolkit.
+audiotwin gives you the classical, dependency-light baselines — and clean
+integration points (NFP scores, match points, content similarities) to
+plug neural systems in when you have them. References: Wang 2003 (landmark
+fingerprinting), Serrà 2009 (cover detection), Chang et al. 2021 (neural
+fingerprinting).
 
 ## Scope
 
-`audiotwin` returns scores — nothing more. It does **not** do source
-separation, transcription, classification, canonical-track selection, or
+`audiotwin` returns analysis data — nothing more. It does **not** do source
+separation, transcription, vocal detection, canonical-track selection, or
 duplicate merging. Those decisions belong to the calling application.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright to be set by the user.
+MIT — see [LICENSE](LICENSE).
 
 ---
 

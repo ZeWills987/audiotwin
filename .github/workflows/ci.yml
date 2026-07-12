@@ -20,14 +20,42 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Chromaprint (fpcalc)
-        run: sudo apt-get update && sudo apt-get install -y libchromaprint-tools
+      - name: Install system dependencies (fpcalc, ffmpeg)
+        run: sudo apt-get update && sudo apt-get install -y libchromaprint-tools ffmpeg
 
-      - name: Install package
-        run: pip install -e ".[dev]"
+      - name: Install package with all extras
+        run: pip install -e ".[all,dev]"
 
       - name: Lint
         run: ruff check .
 
       - name: Test
+        run: pytest -v
+
+  core-only:
+    # Verifies the base install stays lightweight: core audiotwin must
+    # import and its core tests must pass WITHOUT scipy or librosa.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install core package only
+        run: pip install -e ".[dev]"
+
+      - name: Assert scipy and librosa are absent
+        run: |
+          python - <<'EOF'
+          import importlib.util
+          for heavy in ("scipy", "librosa"):
+              assert importlib.util.find_spec(heavy) is None, f"{heavy} leaked into the core install"
+          import audiotwin
+          print("core import OK, version", audiotwin.__version__)
+          EOF
+
+      - name: Run core tests (landmark/cover suites self-skip)
         run: pytest -v
