@@ -24,6 +24,9 @@ DEFAULT_TARGET_FPS = 2.0
 #: Default Sakoe-Chiba band as a fraction of the longer sequence.
 DEFAULT_DTW_BAND_RATIO = 0.25
 
+#: Chroma column norms below this are treated as silence.
+SILENCE_NORM_EPSILON = 1e-8
+
 
 def _require_librosa():
     try:
@@ -77,8 +80,16 @@ def compute_chroma(
         )
 
     norms = np.linalg.norm(aggregated, axis=0, keepdims=True)
-    norms[norms == 0] = 1.0
-    return aggregated / norms
+    # Silent frames (norm ~ 0) become exact zero columns instead of the
+    # NaN/junk that dividing by a near-zero norm would produce. Zero
+    # columns are then dropped before DTW (see _drop_silent_frames) —
+    # cosine distance against a zero vector is 0/0 = NaN, which is what
+    # used to poison the DTW cost matrix on audio with silent passages.
+    silent = norms < SILENCE_NORM_EPSILON
+    safe_norms = np.where(silent, 1.0, norms)
+    normalized = aggregated / safe_norms
+    normalized[:, silent[0]] = 0.0
+    return normalized
 
 
 def optimal_transposition(chroma_a: np.ndarray, chroma_b: np.ndarray) -> tuple[int, float]:
@@ -115,6 +126,18 @@ def optimal_transposition(chroma_a: np.ndarray, chroma_b: np.ndarray) -> tuple[i
     return best_k, best_sim
 
 
+def _drop_silent_frames(chroma: np.ndarray) -> np.ndarray:
+    """Remove columns whose norm is ~0 (silence).
+
+    A zero column yields a 0/0 = NaN cosine distance, which poisons the DTW
+    cost matrix ("ParameterError: DTW cost matrix C has NaN values"). This
+    also covers caller-supplied chroma in cover_similarity_from_chroma, not
+    just matrices produced by compute_chroma.
+    """
+    keep = np.linalg.norm(chroma, axis=0) >= SILENCE_NORM_EPSILON
+    return chroma[:, keep]
+
+
 def _dtw_similarity(
     chroma_a: np.ndarray,
     chroma_b: np.ndarray,
@@ -125,6 +148,15 @@ def _dtw_similarity(
     Returns ``(similarity, normalized_cost, path_length, transposition)``.
     """
     librosa = _require_librosa()
+
+    chroma_a = _drop_silent_frames(chroma_a)
+    chroma_b = _drop_silent_frames(chroma_b)
+
+    if chroma_a.shape[1] == 0 or chroma_b.shape[1] == 0:
+        # One side is entirely silent: nothing to compare. Return a finite,
+        # maximally dissimilar result rather than crashing (cosine distance
+        # tops out at 2.0 per step).
+        return 0.0, 2.0, 0, 0
 
     transposition, _ = optimal_transposition(chroma_a, chroma_b)
     chroma_b_aligned = np.roll(chroma_b, -transposition, axis=0)

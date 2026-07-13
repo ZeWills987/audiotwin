@@ -155,3 +155,56 @@ def test_chroma_shape_and_normalization(original):
     # ~2 fps over a 16 s render -> ~32 frames.
     expected_frames = 16 * 2
     assert abs(chroma.shape[1] - expected_frames) <= 3
+
+
+# --- silence regression -------------------------------------------------------
+#
+# Audio containing silent passages produced all-zero chroma columns whose
+# cosine distance is 0/0 = NaN, crashing librosa.sequence.dtw with
+# "ParameterError: DTW cost matrix C has NaN values".
+
+
+def _with_silence(signal: np.ndarray, sr: int = SR) -> np.ndarray:
+    """Wrap a signal with LONG total silence at the start, middle, and end.
+
+    The gaps must be long (30 s): the CQT's low-frequency analysis windows
+    span several seconds, so short gaps get bridged by leakage from the
+    surrounding content and never yield zero chroma columns.
+    """
+    gap = np.zeros(30 * sr, dtype=np.float32)
+    half = len(signal) // 2
+    return np.concatenate([gap, signal[:half], gap, signal[half:], gap])
+
+
+@requires_ffmpeg
+def test_silent_passages_do_not_crash_cover_similarity(tmp_path, original, unrelated):
+    path_a = str(tmp_path / "silent_a.wav")
+    path_b = str(tmp_path / "silent_b.wav")
+    sf.write(path_a, _with_silence(original), SR)
+    sf.write(path_b, _with_silence(unrelated), SR)
+
+    # Crashed with "ParameterError: DTW cost matrix C has NaN values" before
+    # the fix. use_hpss=False keeps the test fast; the silence handling is
+    # identical on both paths.
+    result = cover_similarity(path_a, path_b, use_hpss=False)
+
+    assert np.isfinite(result["similarity"])
+    assert np.isfinite(result["dtw_normalized_cost"])
+    assert 0.0 <= result["similarity"] <= 1.0
+
+
+def test_silent_chroma_columns_are_zero_not_nan(original):
+    chroma = compute_chroma(_with_silence(original), use_hpss=False)
+    assert not np.isnan(chroma).any()
+    # The silent gaps must actually produce zero columns, otherwise this
+    # regression test stops exercising the silence path.
+    norms = np.linalg.norm(chroma, axis=0)
+    assert (norms < 1e-8).any(), "fixture produced no silent chroma frames"
+
+
+def test_fully_silent_side_returns_finite_result(original):
+    silent_chroma = compute_chroma(np.zeros(10 * SR, dtype=np.float32))
+    chroma = compute_chroma(original)
+    result = cover_similarity_from_chroma(chroma, silent_chroma)
+    assert result["similarity"] == 0.0
+    assert np.isfinite(result["dtw_normalized_cost"])
