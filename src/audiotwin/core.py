@@ -80,8 +80,9 @@ def _run_fpcalc(path: str, max_duration: int) -> tuple[float, np.ndarray]:
     """Run ``fpcalc -raw`` and parse its ``DURATION=``/``FINGERPRINT=`` output.
 
     ``-raw`` mode prints the uncompressed fingerprint as plain comma-separated
-    32-bit integers, so no separate decompression step (and no
-    ``libchromaprint`` shared library) is required.
+    UNSIGNED 32-bit integers, so no separate decompression step (and no
+    ``libchromaprint`` shared library) is required. Returns a ``np.uint32``
+    array — signed 32-bit types overflow on real-world fingerprints.
     """
     command = [_fpcalc_path(), "-raw", "-length", str(max_duration), path]
     try:
@@ -102,7 +103,10 @@ def _run_fpcalc(path: str, max_duration: int) -> tuple[float, np.ndarray]:
             duration = float(line[len("DURATION=") :])
         elif line.startswith("FINGERPRINT="):
             raw = line[len("FINGERPRINT=") :]
-            fingerprint_ints = np.array(raw.split(","), dtype=np.int32)
+            # Chromaprint sub-fingerprints are UNSIGNED 32-bit words
+            # (0..4294967295). np.int32 here overflows on any word above
+            # 2**31 - 1, which real-world audio produces routinely.
+            fingerprint_ints = np.array([int(x) for x in raw.split(",")], dtype=np.uint32)
 
     if duration is None or fingerprint_ints is None:
         raise RuntimeError(f"unexpected fpcalc output for {path!r}: {proc.stdout!r}")
@@ -140,9 +144,9 @@ def compute_fingerprint(path: str, max_duration: int = 120) -> str:
 
 
 def _decode(fingerprint: str) -> np.ndarray:
-    """Decode an audiotwin fingerprint string back into an int32 word array."""
+    """Decode an audiotwin fingerprint string back into a uint32 word array."""
     raw = base64.b64decode(fingerprint)
-    return np.frombuffer(raw, dtype=np.int32)
+    return np.frombuffer(raw, dtype=np.uint32)
 
 
 def compare_fingerprints(fp_a: str, fp_b: str) -> float:
@@ -159,15 +163,17 @@ def compare_fingerprints(fp_a: str, fp_b: str) -> float:
     Returns:
         Similarity in ``[0.0, 1.0]`` — ``1.0`` means identical.
     """
-    words_a = _decode(fp_a).view(np.uint32)
-    words_b = _decode(fp_b).view(np.uint32)
+    words_a = _decode(fp_a)
+    words_b = _decode(fp_b)
 
     n = min(len(words_a), len(words_b))
     if n == 0:
         return 0.0
 
+    # XOR is sign-agnostic bit-wise; the popcount accumulation is forced to
+    # int64 so it can never overflow a 32-bit accumulator on long tracks.
     xor = np.bitwise_xor(words_a[:n], words_b[:n])
-    differing_bits = int(np.unpackbits(xor.view(np.uint8)).sum())
+    differing_bits = int(np.unpackbits(xor.view(np.uint8)).sum(dtype=np.int64))
     total_bits = n * _BITS_PER_WORD
     return 1.0 - differing_bits / total_bits
 
