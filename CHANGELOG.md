@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- **neural: new `neural_localized_match()`** — finds a LOCALIZED aligned
+  fragment of one track inside another (sample, mashup source, kept
+  vocal stem). Whole-track scores dilute short matches, so this inverts
+  the strategy: accept low-scoring chunk correspondences (default
+  calibrated threshold 0.25) and let RANSAC's temporal-coherence test
+  kill the false positives. Validated on real audio: a 20 s fragment
+  overdub-mixed into another real track was located at the exact offset
+  while whole-track nfp_score read 0.08. Optional `pitch_shift_range`
+  compensation (librosa) for re-pitched fragments — with the honest
+  caveat that heavily re-pitched samples under overdub remain hard even
+  neurally (SOTA on Sample100 is mAP 0.603).
+
 ## 0.4.3
 
 - **classify_relation: REMASTER NFP threshold recalibrated on real

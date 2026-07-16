@@ -35,6 +35,7 @@ import urllib.request
 import numpy as np
 
 from audiotwin.audio import decode_audio
+from audiotwin.core import compute_coverage, fit_temporal_alignment
 
 #: Sample rate the Sample-ID model expects.
 NEURAL_SR = 16000
@@ -48,6 +49,13 @@ DEFAULT_CHUNK_HOP_SECONDS = 2.5
 
 #: Default CALIBRATED similarity above which a query chunk counts as matched.
 DEFAULT_MATCH_THRESHOLD = 0.60
+
+#: Default calibrated-score floor for LOCALIZED matching. Deliberately much
+#: lower than DEFAULT_MATCH_THRESHOLD: a short, transformed fragment
+#: (re-pitched sample, vocals over a new instrumentation) scores well below
+#: whole-track duplicates, and the false positives a low threshold lets in
+#: are killed downstream by the RANSAC temporal-coherence test instead.
+DEFAULT_LOCALIZED_THRESHOLD = 0.25
 
 #: Raw-cosine floor of the calibration. Sample-ID's embedding space is
 #: compressed: on real music, UNRELATED tracks already sit around 0.95 raw
@@ -159,10 +167,21 @@ def neural_embedding(
         embeddings, in temporal order. Chunk ``i`` starts at
         ``i * chunk_hop_seconds`` seconds.
     """
+    audio = decode_audio(path, sr=NEURAL_SR)
+    return _embed_audio(audio, chunk_seconds, chunk_hop_seconds, batch_size, checkpoint_path)
+
+
+def _embed_audio(
+    audio: np.ndarray,
+    chunk_seconds: float,
+    chunk_hop_seconds: float,
+    batch_size: int,
+    checkpoint_path: str | None,
+) -> np.ndarray:
+    """Embed an in-memory PCM buffer (16 kHz mono) per chunk."""
     import torch
 
     model = _load_model(checkpoint_path)
-    audio = decode_audio(path, sr=NEURAL_SR)
 
     chunk_len = int(chunk_seconds * NEURAL_SR)
     hop_len = int(chunk_hop_seconds * NEURAL_SR)
@@ -328,3 +347,182 @@ def neural_match_points(
                 )
             )
     return points
+
+
+def neural_localized_match(
+    path_a: str,
+    path_b: str,
+    match_threshold: float = DEFAULT_LOCALIZED_THRESHOLD,
+    min_inliers: int = 4,
+    residual_threshold: float = 2.6,
+    pitch_shift_range: int = 0,
+    chunk_seconds: float = DEFAULT_CHUNK_SECONDS,
+    chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
+    cosine_floor: float = DEFAULT_COSINE_FLOOR,
+    checkpoint_path: str | None = None,
+) -> dict:
+    """Find a LOCALIZED aligned fragment of B inside A (sample / kept stem).
+
+    Whole-track scores dilute a short match: a 10 s sample inside a 3 min
+    track barely moves ``neural_similarity``'s mean, and a re-pitched or
+    overdubbed fragment scores below :data:`DEFAULT_MATCH_THRESHOLD` per
+    chunk. This function inverts the strategy — accept LOW-scoring chunk
+    correspondences (:data:`DEFAULT_LOCALIZED_THRESHOLD`), then demand that
+    the surviving points form a temporally coherent line
+    (:func:`audiotwin.core.fit_temporal_alignment`, RANSAC): random
+    false-positive chunks don't align, a genuine fragment does.
+
+    This is the intended tool for the cases full-track matching misses:
+    short re-pitched samples, mashup sources, and remixes that keep the
+    original vocals (run it on separated vocal stems for the latter — the
+    "stems pattern" in the README).
+
+    Args:
+        path_a: Query track (the one suspected of CONTAINING the fragment).
+        path_b: Reference track (the fragment's origin).
+        match_threshold: Calibrated per-chunk score floor (default 0.25 —
+            deliberately permissive, RANSAC filters the noise).
+        min_inliers: Minimum temporally coherent points (default 4, i.e.
+            ~10 s of matched material at the default hop).
+        residual_threshold: RANSAC inlier tolerance in seconds (default
+            2.6 ≈ one chunk hop; chunk centers quantize the timeline).
+        pitch_shift_range: 0 disables (default); N also tries the query
+            pitch-shifted by ±1..±N semitones and keeps the best alignment
+            (Sample-ID embeddings are not pitch-invariant: a fragment
+            re-pitched by even 1 semitone drops below any usable
+            threshold). Requires librosa (the ``[cover]`` extra). The
+            winning shift is reported as ``pitch_shift_semitones``.
+        chunk_seconds: See :func:`neural_embedding`.
+        chunk_hop_seconds: See :func:`neural_embedding`.
+        cosine_floor: See :data:`DEFAULT_COSINE_FLOOR`.
+        checkpoint_path: Optional custom checkpoint.
+
+    Returns:
+        A dict with ``found`` (bool), ``slope`` (speed factor),
+        ``offset_seconds`` (intercept), ``inlier_count``,
+        ``match_start_query`` / ``match_end_query`` / ``match_start_ref`` /
+        ``match_end_ref`` (fragment bounds, ``None`` when not found),
+        ``coverage_query`` / ``coverage_ref`` and ``confidence`` (mean
+        calibrated score of the inlier points; 0.0 when not found).
+    """
+    audio_a = decode_audio(path_a, sr=NEURAL_SR)
+    emb_b = neural_embedding(
+        path_b,
+        chunk_seconds=chunk_seconds,
+        chunk_hop_seconds=chunk_hop_seconds,
+        checkpoint_path=checkpoint_path,
+    )
+
+    shifts = [0]
+    if pitch_shift_range > 0:
+        try:
+            import librosa  # noqa: F401
+        except ImportError as exc:
+            raise ImportError(
+                "pitch_shift_range requires librosa — install it with "
+                "'pip install audiotwin[cover]' (or audiotwin[all])"
+            ) from exc
+        shifts += [s for s in range(-pitch_shift_range, pitch_shift_range + 1) if s != 0]
+
+    best = _NOT_FOUND_LOCALIZED.copy()
+    for shift in shifts:
+        if shift == 0:
+            query_audio = audio_a
+        else:
+            import librosa
+
+            query_audio = librosa.effects.pitch_shift(audio_a, sr=NEURAL_SR, n_steps=shift)
+        emb_a = _embed_audio(
+            query_audio, chunk_seconds, chunk_hop_seconds, DEFAULT_BATCH_SIZE, checkpoint_path
+        )
+        result = _localized_match_from_embeddings(
+            emb_a,
+            emb_b,
+            match_threshold=match_threshold,
+            min_inliers=min_inliers,
+            residual_threshold=residual_threshold,
+            chunk_seconds=chunk_seconds,
+            chunk_hop_seconds=chunk_hop_seconds,
+            cosine_floor=cosine_floor,
+        )
+        result["pitch_shift_semitones"] = shift
+        if result["found"] and (
+            not best["found"] or result["inlier_count"] > best["inlier_count"]
+        ):
+            best = result
+
+    return best
+
+
+_NOT_FOUND_LOCALIZED = {
+    "found": False,
+    "slope": 0.0,
+    "offset_seconds": 0.0,
+    "inlier_count": 0,
+    "match_start_query": None,
+    "match_end_query": None,
+    "match_start_ref": None,
+    "match_end_ref": None,
+    "coverage_query": 0.0,
+    "coverage_ref": 0.0,
+    "confidence": 0.0,
+    "pitch_shift_semitones": 0,
+}
+
+
+def _localized_match_from_embeddings(
+    emb_a: np.ndarray,
+    emb_b: np.ndarray,
+    match_threshold: float,
+    min_inliers: int,
+    residual_threshold: float,
+    chunk_seconds: float,
+    chunk_hop_seconds: float,
+    cosine_floor: float,
+) -> dict:
+    similarity_matrix = _calibrate(emb_a @ emb_b.T, cosine_floor)
+    center = chunk_seconds / 2.0
+
+    points: list[tuple[float, float, float]] = []
+    for i in range(similarity_matrix.shape[0]):
+        j = int(similarity_matrix[i].argmax())
+        score = float(similarity_matrix[i, j])
+        if score >= match_threshold:
+            points.append(
+                (i * chunk_hop_seconds + center, j * chunk_hop_seconds + center, score)
+            )
+
+    if len(points) < min_inliers:
+        return _NOT_FOUND_LOCALIZED.copy()
+
+    fit = fit_temporal_alignment(
+        points,
+        min_inliers=min_inliers,
+        residual_threshold=residual_threshold,
+    )
+    if not fit["fit_succeeded"]:
+        return _NOT_FOUND_LOCALIZED.copy()
+
+    # Approximate durations from the chunk grids (± one hop).
+    dur_a = (len(emb_a) - 1) * chunk_hop_seconds + chunk_seconds
+    dur_b = (len(emb_b) - 1) * chunk_hop_seconds + chunk_seconds
+    coverage = compute_coverage(points, fit["inlier_indices"], dur_a, dur_b)
+
+    inliers = [points[k] for k in fit["inlier_indices"]]
+    t_queries = [p[0] for p in inliers]
+    t_refs = [p[1] for p in inliers]
+
+    return {
+        "found": True,
+        "slope": fit["slope"],
+        "offset_seconds": fit["intercept"],
+        "inlier_count": fit["inlier_count"],
+        "match_start_query": min(t_queries) - center,
+        "match_end_query": max(t_queries) + center,
+        "match_start_ref": min(t_refs) - center,
+        "match_end_ref": max(t_refs) + center,
+        "coverage_query": coverage["coverage_query"],
+        "coverage_ref": coverage["coverage_ref"],
+        "confidence": float(np.mean([p[2] for p in inliers])),
+        "pitch_shift_semitones": 0,
+    }

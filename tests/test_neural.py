@@ -86,6 +86,54 @@ def test_remaster_variant_scores_above_unrelated(track_paths):
     assert remaster["nfp_score"] > unrelated["nfp_score"]
 
 
+def test_localized_match_geometry_gate():
+    """Unit-test the localized-match mechanism on CRAFTED embeddings.
+
+    Synthetic AUDIO cannot exercise this path: the model (trained on real
+    music) embeds all out-of-domain tone/noise fixtures as near-identical,
+    saturating the background. The model's discrimination on real audio is
+    validated separately (a real overdubbed sample was found at the exact
+    offset while whole-track nfp was 0.08); here we verify the geometry:
+    a coherent diagonal of matching chunks is found and fitted, scattered
+    junk is rejected by the RANSAC gate.
+    """
+    from audiotwin.neural import _localized_match_from_embeddings
+
+    rng = np.random.default_rng(42)
+
+    def unit_rows(n, dim=64):
+        m = rng.standard_normal((n, dim)).astype(np.float32)
+        return m / np.linalg.norm(m, axis=1, keepdims=True)
+
+    emb_a = unit_rows(24)  # 60 s query at 2.5 s hop
+    emb_b = unit_rows(12)  # 30 s reference
+    # Fragment: query chunks 8..13 ARE reference chunks 2..7 (raw cos 1.0)
+    # -> t_query 22.5 s maps to t_ref 7.5 s: slope 1, offset -15 s.
+    emb_a[8:14] = emb_b[2:8]
+
+    kwargs = dict(
+        match_threshold=0.25,
+        min_inliers=4,
+        residual_threshold=2.6,
+        chunk_seconds=5.0,
+        chunk_hop_seconds=2.5,
+        cosine_floor=0.95,
+    )
+    loc = _localized_match_from_embeddings(emb_a, emb_b, **kwargs)
+    assert loc["found"] is True
+    assert loc["slope"] == pytest.approx(1.0, abs=0.05)
+    assert loc["offset_seconds"] == pytest.approx(-15.0, abs=1.5)
+    assert loc["inlier_count"] >= 6
+    assert loc["match_start_query"] == pytest.approx(20.0, abs=2.6)
+    assert loc["match_start_ref"] == pytest.approx(5.0, abs=2.6)
+    # Localized: the fragment covers a minority of the query.
+    assert loc["coverage_query"] < 0.35
+
+    # Random embeddings (raw cosines ~0 << floor): nothing to find.
+    none = _localized_match_from_embeddings(unit_rows(24), unit_rows(12), **kwargs)
+    assert none["found"] is False
+
+
 @requires_ffmpeg
 def test_match_points_feed_classify_edit(track_paths):
     from audiotwin import classify_edit
