@@ -74,7 +74,28 @@ DEFAULT_BATCH_SIZE = 16
 #: Override the checkpoint cache directory via this environment variable.
 CACHE_DIR_ENVVAR = "AUDIOTWIN_CACHE"
 
+#: Override the inference device via this environment variable
+#: ("cuda", "cuda:1", "mps", "cpu"). Without it, CUDA (then MPS) is used
+#: automatically when available, else CPU.
+DEVICE_ENVVAR = "AUDIOTWIN_DEVICE"
+
 _MODEL_CACHE: dict = {}
+
+
+def _resolve_device(device: str | None = None) -> str:
+    """Pick the inference device: explicit arg > env var > auto-detect."""
+    if device:
+        return device
+    env = os.environ.get(DEVICE_ENVVAR)
+    if env:
+        return env
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 def _cache_dir() -> str:
@@ -125,19 +146,22 @@ def _require_sampleid():
     return SampleID
 
 
-def _load_model(checkpoint_path: str | None = None):
-    """Load (and memoize) the Sample-ID model in eval mode."""
+def _load_model(checkpoint_path: str | None = None, device: str | None = None):
+    """Load (and memoize) the Sample-ID model in eval mode on a device."""
     import torch
 
     SampleID = _require_sampleid()
-    key = checkpoint_path or "__default__"
+    resolved_device = _resolve_device(device)
+    key = (checkpoint_path or "__default__", resolved_device)
     if key not in _MODEL_CACHE:
         resolved = checkpoint_path or _default_checkpoint(SampleID)
-        model = SampleID.load_checkpoint(ckpt_path=resolved)
+        model = SampleID.load_checkpoint(
+            ckpt_path=resolved, device=torch.device(resolved_device)
+        )
         model.eval()
         torch.set_grad_enabled(False)
         _MODEL_CACHE[key] = model
-    return _MODEL_CACHE[key]
+    return _MODEL_CACHE[key], resolved_device
 
 
 def neural_embedding(
@@ -146,6 +170,7 @@ def neural_embedding(
     chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
     batch_size: int = DEFAULT_BATCH_SIZE,
     checkpoint_path: str | None = None,
+    device: str | None = None,
 ) -> np.ndarray:
     """Per-chunk Sample-ID embeddings for an audio file.
 
@@ -168,7 +193,9 @@ def neural_embedding(
         ``i * chunk_hop_seconds`` seconds.
     """
     audio = decode_audio(path, sr=NEURAL_SR)
-    return _embed_audio(audio, chunk_seconds, chunk_hop_seconds, batch_size, checkpoint_path)
+    return _embed_audio(
+        audio, chunk_seconds, chunk_hop_seconds, batch_size, checkpoint_path, device
+    )
 
 
 def _embed_audio(
@@ -177,11 +204,12 @@ def _embed_audio(
     chunk_hop_seconds: float,
     batch_size: int,
     checkpoint_path: str | None,
+    device: str | None = None,
 ) -> np.ndarray:
     """Embed an in-memory PCM buffer (16 kHz mono) per chunk."""
     import torch
 
-    model = _load_model(checkpoint_path)
+    model, resolved_device = _load_model(checkpoint_path, device)
 
     chunk_len = int(chunk_seconds * NEURAL_SR)
     hop_len = int(chunk_hop_seconds * NEURAL_SR)
@@ -194,7 +222,7 @@ def _embed_audio(
     embeddings = []
     with torch.inference_mode():
         for i in range(0, len(chunks), batch_size):
-            batch = torch.from_numpy(chunks[i : i + batch_size])
+            batch = torch.from_numpy(chunks[i : i + batch_size]).to(resolved_device)
             out = model(batch, audio=True)  # (batch, 1, embed_dim)
             embeddings.append(out.squeeze(1).cpu().numpy())
 
@@ -217,6 +245,7 @@ def neural_similarity(
     chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
     cosine_floor: float = DEFAULT_COSINE_FLOOR,
     checkpoint_path: str | None = None,
+    device: str | None = None,
 ) -> dict:
     """Neural content similarity between two files, in detect()'s NFP format.
 
@@ -256,12 +285,14 @@ def neural_similarity(
         chunk_seconds=chunk_seconds,
         chunk_hop_seconds=chunk_hop_seconds,
         checkpoint_path=checkpoint_path,
+        device=device,
     )
     emb_b = neural_embedding(
         path_b,
         chunk_seconds=chunk_seconds,
         chunk_hop_seconds=chunk_hop_seconds,
         checkpoint_path=checkpoint_path,
+        device=device,
     )
 
     similarity_matrix = emb_a @ emb_b.T  # (chunks_a, chunks_b), raw cosine
@@ -283,6 +314,7 @@ def neural_match_points(
     chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
     cosine_floor: float = DEFAULT_COSINE_FLOOR,
     checkpoint_path: str | None = None,
+    device: str | None = None,
 ) -> list[tuple[float, float, float]]:
     """Chunk-level correspondences in classify_edit()'s match-point format.
 
@@ -323,12 +355,14 @@ def neural_match_points(
         chunk_seconds=chunk_seconds,
         chunk_hop_seconds=chunk_hop_seconds,
         checkpoint_path=checkpoint_path,
+        device=device,
     )
     emb_b = neural_embedding(
         path_b,
         chunk_seconds=chunk_seconds,
         chunk_hop_seconds=chunk_hop_seconds,
         checkpoint_path=checkpoint_path,
+        device=device,
     )
 
     similarity_matrix = _calibrate(emb_a @ emb_b.T, cosine_floor)
@@ -360,6 +394,7 @@ def neural_localized_match(
     chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
     cosine_floor: float = DEFAULT_COSINE_FLOOR,
     checkpoint_path: str | None = None,
+    device: str | None = None,
 ) -> dict:
     """Find a LOCALIZED aligned fragment of B inside A (sample / kept stem).
 
@@ -411,6 +446,7 @@ def neural_localized_match(
         chunk_seconds=chunk_seconds,
         chunk_hop_seconds=chunk_hop_seconds,
         checkpoint_path=checkpoint_path,
+        device=device,
     )
 
     shifts = [0]
@@ -433,7 +469,12 @@ def neural_localized_match(
 
             query_audio = librosa.effects.pitch_shift(audio_a, sr=NEURAL_SR, n_steps=shift)
         emb_a = _embed_audio(
-            query_audio, chunk_seconds, chunk_hop_seconds, DEFAULT_BATCH_SIZE, checkpoint_path
+            query_audio,
+            chunk_seconds,
+            chunk_hop_seconds,
+            DEFAULT_BATCH_SIZE,
+            checkpoint_path,
+            device,
         )
         result = _localized_match_from_embeddings(
             emb_a,

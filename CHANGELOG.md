@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1
+
+- **neural: GPU support** — the inference device is auto-detected
+  (CUDA, then Apple MPS, else CPU) and can be forced per call via the
+  new `device` parameter on every neural function, or globally via the
+  `AUDIOTWIN_DEVICE` environment variable ("cuda", "cuda:1", "mps",
+  "cpu"). On a GPU box with a CUDA build of torch installed, nothing
+  else changes: the same code runs ~10-50x faster per pair.
+
 ## 0.5.0
 
 - **neural: new `neural_localized_match()`** — finds a LOCALIZED aligned

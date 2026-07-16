@@ -333,9 +333,19 @@ edit = classify_edit(points, query_duration=180.0, ref_duration=245.0)
 `neural_similarity` returns exactly the `nfp_score` / `nfp_segments_matched`
 / `nfp_coverage` triple that `detect`, `detect_relation` and
 `combine_scores` accept; `neural_match_points` returns the
-`(t_query, t_ref, score)` triples that `classify_edit` consumes. CPU
-inference works (no GPU required); the model chunks tracks into 5 s
-windows with 2.5 s hop.
+`(t_query, t_ref, score)` triples that `classify_edit` consumes;
+`neural_localized_match` finds a localized fragment (sample, mashup
+source, kept vocal stem) via low-threshold matching gated by RANSAC
+temporal coherence. The model chunks tracks into 5 s windows with 2.5 s
+hop.
+
+**GPU mode**: the inference device is auto-detected — install a CUDA
+build of torch (`pip install torch --index-url
+https://download.pytorch.org/whl/cu124`) on a GPU machine and the same
+code runs ~10-50x faster, nothing else to change. Force a device with
+the `device` parameter or the `AUDIOTWIN_DEVICE` environment variable
+(`cuda`, `cuda:1`, `mps`, `cpu`). CPU-only works everywhere (no GPU
+required).
 
 ## Aggregating everything: `suggest_relation()`
 
