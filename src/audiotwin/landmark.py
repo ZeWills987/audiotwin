@@ -44,10 +44,30 @@ def _require_scipy():
         import scipy.signal
     except ImportError as exc:
         raise ImportError(
-            "the landmark module requires scipy — install it with "
-            "'pip install audiotwin[landmark]'"
+            "the landmark module requires scipy — install it with 'pip install audiotwin[landmark]'"
         ) from exc
     return scipy.signal, scipy.ndimage
+
+
+def _spectral_whitening(
+    magnitude: np.ndarray,
+    envelope_bins: int,
+    floor: float,
+) -> np.ndarray:
+    """Divide each spectrogram column by its smoothed spectral envelope.
+
+    The envelope is a uniform (moving-average) filter along the FREQUENCY
+    axis, so the division flattens spectral roll-off — high-frequency peaks
+    compete fairly with the low-frequency energy mass — while preserving
+    the LOCAL contrast that makes a peak a peak. (A running-peak AGC in the
+    style of Stowell & Plumbley 2007 was tried first and rejected: it
+    saturates most bins to exactly 1.0, ties collapse the top-K peak
+    selection into lattice artifacts, and specificity is destroyed — white
+    noise matched indexed tracks with hundreds of aligned hashes.)
+    """
+    _, scipy_ndimage = _require_scipy()
+    envelope = scipy_ndimage.uniform_filter1d(magnitude, size=envelope_bins, axis=0)
+    return magnitude / (envelope + floor)
 
 
 def extract_landmarks(
@@ -59,13 +79,17 @@ def extract_landmarks(
     target_density: float = 25.0,
     fan_out: int = 5,
     target_zone: tuple[float, float, int, int] = (0.5, 3.0, -32, 32),
+    whiten: bool = True,
+    whitening_envelope_bins: int = 31,
+    whitening_floor: float = 1e-6,
 ) -> list[tuple[int, float]]:
     """Extract Wang-2003 landmark hashes from mono PCM audio.
 
-    Pipeline: STFT magnitude → non-maximum-suppression peak picking with
-    an adaptive threshold targeting ``target_density`` peaks/second →
-    anchor/target pairing within ``target_zone`` → 32-bit hash packing
-    (see the bit-layout comment at module top).
+    Pipeline: STFT magnitude → optional adaptive whitening →
+    non-maximum-suppression peak picking with an adaptive threshold
+    targeting ``target_density`` peaks/second → anchor/target pairing
+    within ``target_zone`` → 32-bit hash packing (see the bit-layout
+    comment at module top).
 
     Args:
         audio: Mono float32 PCM (output of :func:`audiotwin.audio.decode_audio`).
@@ -79,6 +103,15 @@ def extract_landmarks(
         target_zone: ``(dt_min_s, dt_max_s, dfreq_min_bins, dfreq_max_bins)``
             window in which to look for target peaks (default
             (0.5, 3.0, -32, 32)).
+        whiten: Apply spectral whitening before peak picking (default
+            True): each column is divided by its smoothed spectral envelope
+            so high-frequency peaks compete fairly with the low-frequency
+            energy mass. **Changing this changes the extracted hashes** —
+            use the same value at index and query time.
+        whitening_envelope_bins: Frequency width (bins) of the envelope's
+            moving-average filter (default 31).
+        whitening_floor: Envelope floor preventing noise amplification in
+            silent bins (default 1e-6).
 
     Returns:
         A list of ``(hash_int, t_anchor_seconds)`` tuples.
@@ -93,6 +126,13 @@ def extract_landmarks(
     )
     magnitude = np.abs(stft)
     duration = len(audio) / sr
+
+    if whiten:
+        magnitude = _spectral_whitening(
+            magnitude,
+            envelope_bins=whitening_envelope_bins,
+            floor=whitening_floor,
+        )
 
     # Non-maximum suppression: a bin survives when it is the maximum of its
     # neighborhood. The adaptive part is the global top-K selection below.
@@ -151,7 +191,11 @@ def _match_landmarks(
 
     For each candidate track, histogram the ``t_ref - t_query`` offsets;
     a histogram peak of at least ``min_aligned_hashes`` consistent offsets
-    is a match (Wang 2003's time-coherence test).
+    is a match (Wang 2003's time-coherence test). Adjacent histogram bins
+    are fused pairwise: a true offset landing near a bin boundary splits
+    its votes between two neighboring bins, so the peak is searched over
+    ``bin ∪ bin+1`` and the reported offset is the mean of the fused
+    pairs' actual offsets (more accurate than the bin center).
     """
     if not query_landmarks:
         return []
@@ -177,22 +221,30 @@ def _match_landmarks(
                 offset_bin = int(round((t_ref - t_query) / offset_bin_width))
                 pair_bins[(track_id, offset_bin)].append((t_query, t_ref))
 
-    # Best offset bin per track.
-    best_per_track: dict[str, tuple[int, list[tuple[float, float]]]] = {}
+    # Regroup bins per track, then find the best FUSED (bin, bin+1) window.
+    bins_per_track: dict[str, dict[int, list[tuple[float, float]]]] = defaultdict(dict)
     for (track_id, offset_bin), pairs in pair_bins.items():
-        current = best_per_track.get(track_id)
-        if current is None or len(pairs) > len(current[1]):
-            best_per_track[track_id] = (offset_bin, pairs)
+        bins_per_track[track_id][offset_bin] = pairs
+
+    best_per_track: dict[str, list[tuple[float, float]]] = {}
+    for track_id, bins in bins_per_track.items():
+        best_pairs: list[tuple[float, float]] = []
+        for offset_bin, pairs in bins.items():
+            fused = pairs + bins.get(offset_bin + 1, [])
+            if len(fused) > len(best_pairs):
+                best_pairs = fused
+        best_per_track[track_id] = best_pairs
 
     results = []
     n_query_hashes = len(query_landmarks)
-    for track_id, (offset_bin, pairs) in best_per_track.items():
+    for track_id, pairs in best_per_track.items():
         if len(pairs) < min_aligned_hashes:
             continue
+        offset_seconds = sum(t_r - t_q for t_q, t_r in pairs) / len(pairs)
         results.append(
             {
                 "track_id": track_id,
-                "offset_seconds": offset_bin * offset_bin_width,
+                "offset_seconds": offset_seconds,
                 "aligned_hashes": len(pairs),
                 "query_hashes": n_query_hashes,
                 "score": min(1.0, len(pairs) / n_query_hashes),
@@ -311,9 +363,7 @@ class LandmarkIndex:
         audio = decode_audio(audio_path, sr=sr)
 
         landmarks = extract_landmarks(audio, sr=sr, **extract_params)
-        results = _match_landmarks(
-            landmarks, self._conn, min_aligned_hashes, offset_bin_width
-        )
+        results = _match_landmarks(landmarks, self._conn, min_aligned_hashes, offset_bin_width)
 
         if pitch_shift_range > 0:
             try:
@@ -428,7 +478,10 @@ def classify_mashup(
 
     Sources are accepted greedily by descending ``aligned_hashes``; a
     candidate is rejected when its query-time region overlaps an already
-    accepted region by ≥ 30% (of the shorter region).
+    accepted region by ≥ 30% (of the shorter region). Region bounds use
+    the 5th–95th percentiles of the match points' query times rather than
+    min/max: a handful of stray hash collisions must not stretch a
+    region into its neighbors and veto a genuine mashup source.
 
     Args:
         query_results: Full output of :meth:`LandmarkIndex.query`.
@@ -445,9 +498,7 @@ def classify_mashup(
         coverage_total — both more evidence per source and more of the
         query explained increase it).
     """
-    candidates = [
-        r for r in query_results if r["aligned_hashes"] >= min_aligned_hashes_per_source
-    ]
+    candidates = [r for r in query_results if r["aligned_hashes"] >= min_aligned_hashes_per_source]
     candidates.sort(key=lambda r: r["aligned_hashes"], reverse=True)
 
     accepted: list[dict] = []
@@ -457,8 +508,8 @@ def classify_mashup(
     for r in candidates:
         if r["track_id"] in seen_tracks or not r["match_points"]:
             continue
-        t_queries = [p[0] for p in r["match_points"]]
-        start, end = min(t_queries), max(t_queries)
+        t_queries = np.asarray([p[0] for p in r["match_points"]])
+        start, end = (float(x) for x in np.percentile(t_queries, [5.0, 95.0]))
         length = max(end - start, 1e-9)
 
         overlaps_too_much = False
@@ -499,9 +550,9 @@ def classify_mashup(
     is_mashup = len(accepted) >= min_sources
 
     if is_mashup:
-        mean_conf = sum(
-            _saturating_confidence(s["aligned_hashes"]) for s in accepted
-        ) / len(accepted)
+        mean_conf = sum(_saturating_confidence(s["aligned_hashes"]) for s in accepted) / len(
+            accepted
+        )
         confidence = min(1.0, mean_conf * coverage_total)
     else:
         confidence = 0.0

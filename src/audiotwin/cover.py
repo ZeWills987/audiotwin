@@ -27,14 +27,17 @@ DEFAULT_DTW_BAND_RATIO = 0.25
 #: Chroma column norms below this are treated as silence.
 SILENCE_NORM_EPSILON = 1e-8
 
+#: Default chroma-frame length of a 2DFTM patch (32 frames = 16 s at the
+#: default 2 fps).
+DEFAULT_2DFTM_PATCH_FRAMES = 32
+
 
 def _require_librosa():
     try:
         import librosa
     except ImportError as exc:
         raise ImportError(
-            "the cover module requires librosa — install it with "
-            "'pip install audiotwin[cover]'"
+            "the cover module requires librosa — install it with 'pip install audiotwin[cover]'"
         ) from exc
     return librosa
 
@@ -75,9 +78,7 @@ def compute_chroma(
     if n_blocks == 0:
         aggregated = chroma.mean(axis=1, keepdims=True)
     else:
-        aggregated = (
-            chroma[:, : n_blocks * block].reshape(12, n_blocks, block).mean(axis=2)
-        )
+        aggregated = chroma[:, : n_blocks * block].reshape(12, n_blocks, block).mean(axis=2)
 
     norms = np.linalg.norm(aggregated, axis=0, keepdims=True)
     # Silent frames (norm ~ 0) become exact zero columns instead of the
@@ -173,9 +174,7 @@ def _dtw_similarity(
     except librosa.ParameterError:
         # The Sakoe-Chiba band can be infeasible when the two sequences have
         # very different lengths; retry unconstrained.
-        cost_matrix, path = librosa.sequence.dtw(
-            X=chroma_a, Y=chroma_b_aligned, metric="cosine"
-        )
+        cost_matrix, path = librosa.sequence.dtw(X=chroma_a, Y=chroma_b_aligned, metric="cosine")
 
     path_length = len(path)
     normalized_cost = float(cost_matrix[-1, -1]) / max(path_length, 1)
@@ -259,3 +258,57 @@ def cover_similarity(
         **result,
         "duration_ratio": duration_b / duration_a if duration_a else 0.0,
     }
+
+
+def cover_embedding(
+    chroma: np.ndarray,
+    patch_frames: int = DEFAULT_2DFTM_PATCH_FRAMES,
+) -> np.ndarray:
+    """Fixed-size, transposition- and time-shift-invariant track embedding
+    (2D Fourier Transform Magnitude, Bertin-Mahieux & Ellis 2012).
+
+    Slice the chroma matrix into ``12 × patch_frames`` patches (50% hop),
+    take the 2D FFT magnitude of each (a key transposition is a circular
+    shift along the pitch axis and a time offset is a shift along the time
+    axis — both only change the *phase* of the Fourier coefficients, so
+    taking the magnitude erases them), median-pool across patches, and
+    L2-normalize.
+
+    This is a **pre-filter**, not a verdict: comparing embeddings by cosine
+    similarity (:func:`cover_embedding_similarity`) costs O(1) per pair,
+    versus the O(N·M) DTW of :func:`cover_similarity`. The intended
+    two-stage pattern at catalog scale: rank candidates by embedding
+    similarity, then run the exact DTW pipeline on the top-K only. Ranking
+    quality alone is well below the DTW pipeline's (Da-TACOS MAP ~0.13-0.28
+    for the 2DFTM family vs ~0.37 for alignment methods).
+
+    Args:
+        chroma: ``(12, T)`` chroma matrix (see :func:`compute_chroma`).
+        patch_frames: Patch length in chroma frames (default 32 — 16 s at
+            the default 2 fps). Shorter chroma is zero-padded to one patch.
+
+    Returns:
+        A 1-D L2-normalized ``float64`` vector of ``12 * patch_frames``
+        values.
+    """
+    if chroma.shape[1] < patch_frames:
+        padded = np.zeros((12, patch_frames), dtype=np.float64)
+        padded[:, : chroma.shape[1]] = chroma
+        chroma = padded
+
+    hop = max(1, patch_frames // 2)
+    magnitudes = []
+    for start in range(0, chroma.shape[1] - patch_frames + 1, hop):
+        patch = chroma[:, start : start + patch_frames]
+        magnitudes.append(np.abs(np.fft.fft2(patch)))
+
+    pooled = np.median(np.stack(magnitudes), axis=0).ravel()
+    norm = np.linalg.norm(pooled)
+    return pooled / norm if norm > 0 else pooled
+
+
+def cover_embedding_similarity(embedding_a: np.ndarray, embedding_b: np.ndarray) -> float:
+    """Cosine similarity between two :func:`cover_embedding` vectors,
+    clamped to ``[0, 1]``. O(1) per pair — the pre-filter counterpart of
+    :func:`cover_similarity`."""
+    return float(np.clip(np.dot(embedding_a, embedding_b), 0.0, 1.0))

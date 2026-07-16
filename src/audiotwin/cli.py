@@ -84,9 +84,7 @@ def _build_parser() -> argparse.ArgumentParser:
     classify.add_argument(
         "--nfp-segments-matched", type=int, default=None, help="Optional NFP metadata."
     )
-    classify.add_argument(
-        "--nfp-coverage", type=float, default=None, help="Optional NFP metadata."
-    )
+    classify.add_argument("--nfp-coverage", type=float, default=None, help="Optional NFP metadata.")
     classify.add_argument(
         "--duplicate-threshold",
         type=float,
@@ -104,8 +102,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_REMASTER_NFP_THRESHOLD,
         help=(
-            "NFP confirmation threshold for REMASTER "
-            f"(default: {DEFAULT_REMASTER_NFP_THRESHOLD})."
+            f"NFP confirmation threshold for REMASTER (default: {DEFAULT_REMASTER_NFP_THRESHOLD})."
         ),
     )
 
@@ -191,8 +188,7 @@ def _build_parser() -> argparse.ArgumentParser:
     lm_query.add_argument(
         "--classify-sample",
         action="store_true",
-        help="Add a localized-sample hint per match (needs --query-duration "
-        "and --ref-duration).",
+        help="Add a localized-sample hint per match (needs --query-duration and --ref-duration).",
     )
     lm_query.add_argument("--query-duration", type=float, default=None)
     lm_query.add_argument("--ref-duration", type=float, default=None)
@@ -339,15 +335,12 @@ def main(argv: list[str] | None = None) -> int:
                 if args.classify_sample:
                     if args.query_duration is None or args.ref_duration is None:
                         print(
-                            "error: --classify-sample needs --query-duration "
-                            "and --ref-duration",
+                            "error: --classify-sample needs --query-duration and --ref-duration",
                             file=sys.stderr,
                         )
                         return 2
                     for r in results:
-                        r["sample"] = classify_sample(
-                            r, args.query_duration, args.ref_duration
-                        )
+                        r["sample"] = classify_sample(r, args.query_duration, args.ref_duration)
                 if args.json:
                     print(json.dumps(results, indent=2))
                 elif not results:
@@ -379,9 +372,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "cover":
             from audiotwin.cover import cover_similarity
 
-            result = cover_similarity(
-                args.file_a, args.file_b, use_hpss=not args.no_hpss
-            )
+            result = cover_similarity(args.file_a, args.file_b, use_hpss=not args.no_hpss)
             if args.json:
                 print(json.dumps(result, indent=2))
             else:

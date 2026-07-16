@@ -11,6 +11,7 @@ they are skipped when either is unavailable.
 from __future__ import annotations
 
 import shutil
+import sqlite3
 import time
 
 import numpy as np
@@ -26,9 +27,7 @@ from audiotwin.landmark import (  # noqa: E402
     extract_landmarks,
 )
 
-requires_ffmpeg = pytest.mark.skipif(
-    not shutil.which("ffmpeg"), reason="ffmpeg not installed"
-)
+requires_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 
 SR = 11025
 
@@ -225,3 +224,52 @@ def test_extract_landmarks_performance():
     elapsed = time.perf_counter() - start
     assert landmarks, "expected landmarks from 3 minutes of tonal content"
     assert elapsed < 5.0, f"extract_landmarks took {elapsed:.2f}s on 3 min of audio"
+
+
+def test_whitening_changes_hashes_and_both_modes_work(track_b):
+    whitened = extract_landmarks(track_b, whiten=True)
+    raw = extract_landmarks(track_b, whiten=False)
+    assert whitened and raw
+    # Whitening reshapes the magnitude surface, so peak selection (and thus
+    # the hash set) must differ — otherwise the flag is a no-op.
+    assert set(h for h, _ in whitened) != set(h for h, _ in raw)
+
+
+@requires_ffmpeg
+def test_whitened_index_still_matches_extract(tmp_path, track_a):
+    # End-to-end with the new default (whiten=True) on both sides: the
+    # localized-sample scenario must keep working.
+    index = LandmarkIndex(":memory:")
+    index.add_track("A", _write(tmp_path, "a.wav", track_a))
+    extract = track_a[20 * SR : 30 * SR]
+    query = np.concatenate([extract, _tone_sequence(20.0, seed=99)])
+    results = index.query(_write(tmp_path, "q.wav", query))
+    assert results and results[0]["track_id"] == "A"
+    assert results[0]["offset_seconds"] == pytest.approx(20.0, abs=0.5)
+
+
+def test_adjacent_offset_bins_are_fused():
+    # A true offset of 0.30 s with bin width 0.2 s: jittered offsets land
+    # in bins 1 and 2 (boundary at 0.30), splitting the votes 6/6. Without
+    # fusion neither bin reaches min_aligned_hashes=10; with fusion the
+    # match is found and the offset is the mean of the actual offsets.
+    from audiotwin.landmark import _match_landmarks
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE landmarks (hash INTEGER, track_id TEXT, t_anchor REAL)")
+
+    query_landmarks = []
+    rows = []
+    for i in range(12):
+        t_query = float(i)
+        jitter = 0.03 if i % 2 == 0 else -0.03  # straddle the 0.30 boundary
+        rows.append((i, "X", t_query + 0.30 + jitter))
+        query_landmarks.append((i, t_query))
+    conn.executemany("INSERT INTO landmarks VALUES (?, ?, ?)", rows)
+
+    results = _match_landmarks(
+        query_landmarks, conn, min_aligned_hashes=10, offset_bin_width=0.2
+    )
+    assert results and results[0]["track_id"] == "X"
+    assert results[0]["aligned_hashes"] == 12
+    assert results[0]["offset_seconds"] == pytest.approx(0.30, abs=0.01)

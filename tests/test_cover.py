@@ -22,9 +22,7 @@ from audiotwin.cover import (  # noqa: E402
     optimal_transposition,
 )
 
-requires_ffmpeg = pytest.mark.skipif(
-    not shutil.which("ffmpeg"), reason="ffmpeg not installed"
-)
+requires_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 
 SR = 22050
 
@@ -133,9 +131,7 @@ def test_from_files_equals_from_chroma(tmp_path, original, cover_transposed_stre
     chroma_result = cover_similarity_from_chroma(chroma_a, chroma_b)
 
     assert file_result["similarity"] == pytest.approx(chroma_result["similarity"])
-    assert (
-        file_result["transposition_semitones"] == chroma_result["transposition_semitones"]
-    )
+    assert file_result["transposition_semitones"] == chroma_result["transposition_semitones"]
     assert file_result["duration_ratio"] == pytest.approx(1.15, abs=0.02)
 
 
@@ -208,3 +204,47 @@ def test_fully_silent_side_returns_finite_result(original):
     result = cover_similarity_from_chroma(chroma, silent_chroma)
     assert result["similarity"] == 0.0
     assert np.isfinite(result["dtw_normalized_cost"])
+
+
+# --- 2DFTM pre-filter embedding ------------------------------------------------
+
+
+def test_cover_embedding_ranks_cover_above_unrelated(
+    original, cover_transposed_stretched, unrelated
+):
+    from audiotwin.cover import cover_embedding, cover_embedding_similarity
+
+    emb_orig = cover_embedding(compute_chroma(original))
+    emb_cover = cover_embedding(compute_chroma(cover_transposed_stretched))
+    emb_other = cover_embedding(compute_chroma(unrelated))
+
+    sim_cover = cover_embedding_similarity(emb_orig, emb_cover)
+    sim_other = cover_embedding_similarity(emb_orig, emb_other)
+    # Pre-filter contract: the true cover must rank above the unrelated
+    # track (relative ordering, not absolute values).
+    assert sim_cover > sim_other
+
+
+def test_cover_embedding_is_transposition_invariant(original):
+    from audiotwin.cover import cover_embedding, cover_embedding_similarity
+
+    chroma = compute_chroma(original)
+    # A pure circular pitch shift only changes the phase of the 2D Fourier
+    # coefficients: the magnitude embedding must be (near-)identical.
+    shifted = np.roll(chroma, 4, axis=0)
+    sim = cover_embedding_similarity(cover_embedding(chroma), cover_embedding(shifted))
+    assert sim == pytest.approx(1.0, abs=1e-9)
+
+
+def test_cover_embedding_shape_and_short_input(original):
+    from audiotwin.cover import cover_embedding
+
+    chroma = compute_chroma(original)
+    emb = cover_embedding(chroma, patch_frames=16)
+    assert emb.shape == (12 * 16,)
+    assert np.linalg.norm(emb) == pytest.approx(1.0)
+
+    # Shorter than one patch: zero-padded, still well-formed.
+    emb_short = cover_embedding(chroma[:, :5], patch_frames=16)
+    assert emb_short.shape == (12 * 16,)
+    assert np.isfinite(emb_short).all()

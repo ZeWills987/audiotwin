@@ -17,6 +17,10 @@ import numpy as np
 FFMPEG_COMMAND_ENVVAR = "AUDIOTWIN_FFMPEG"
 FFMPEG_COMMAND = "ffmpeg"
 
+#: Safety-net timeout (seconds) for the ffmpeg subprocess — a corrupt file
+#: or wedged decoder fails loudly instead of hanging the caller forever.
+FFMPEG_TIMEOUT_SECONDS = 600.0
+
 
 class FfmpegNotFoundError(RuntimeError):
     """Raised when the ``ffmpeg`` executable can't be found."""
@@ -48,24 +52,35 @@ def decode_audio(path: str, sr: int, mono: bool = True) -> np.ndarray:
 
     command = [
         _ffmpeg_path(),
-        "-v", "error",
-        "-i", path,
-        "-f", "f32le",
-        "-acodec", "pcm_f32le",
-        "-ar", str(sr),
+        "-v",
+        "error",
+        "-i",
+        path,
+        "-f",
+        "f32le",
+        "-acodec",
+        "pcm_f32le",
+        "-ar",
+        str(sr),
     ]
     if mono:
         command += ["-ac", "1"]
     command += ["-"]
 
     try:
-        proc = subprocess.run(command, capture_output=True, check=False)
+        proc = subprocess.run(
+            command, capture_output=True, check=False, timeout=FFMPEG_TIMEOUT_SECONDS
+        )
     except FileNotFoundError as exc:
         raise FfmpegNotFoundError(
             "the 'ffmpeg' executable was not found on PATH. Install it "
             "(Debian/Ubuntu: 'sudo apt-get install ffmpeg', macOS: "
             "'brew install ffmpeg', Windows: 'winget install Gyan.FFmpeg') "
             f"or set {FFMPEG_COMMAND_ENVVAR} to its path."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"ffmpeg timed out after {FFMPEG_TIMEOUT_SECONDS:.0f}s decoding {path!r}"
         ) from exc
 
     if proc.returncode != 0:

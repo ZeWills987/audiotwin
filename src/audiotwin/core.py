@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import os
 import subprocess
 
@@ -30,6 +31,10 @@ import numpy as np
 #: ``AUDIOTWIN_FPCALC`` environment variable if it isn't on PATH.
 FPCALC_COMMAND_ENVVAR = "AUDIOTWIN_FPCALC"
 FPCALC_COMMAND = "fpcalc"
+
+#: Safety-net timeout (seconds) for the fpcalc subprocess — a corrupt file
+#: or wedged decoder fails loudly instead of hanging the caller forever.
+FPCALC_TIMEOUT_SECONDS = 600.0
 
 #: Minimum audio duration (seconds) required to compute a fingerprint.
 MIN_DURATION_SECONDS = 10
@@ -86,11 +91,21 @@ def _run_fpcalc(path: str, max_duration: int) -> tuple[float, np.ndarray]:
     """
     command = [_fpcalc_path(), "-raw", "-length", str(max_duration), path]
     try:
-        proc = subprocess.run(command, capture_output=True, check=False, text=True)
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=FPCALC_TIMEOUT_SECONDS,
+        )
     except FileNotFoundError as exc:
         raise FpcalcNotFoundError(
             "the 'fpcalc' executable (Chromaprint) was not found on PATH. "
             f"Install it (see README) or set {FPCALC_COMMAND_ENVVAR} to its path."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"fpcalc timed out after {FPCALC_TIMEOUT_SECONDS:.0f}s on {path!r}"
         ) from exc
 
     if proc.returncode != 0:
@@ -503,6 +518,13 @@ DEFAULT_FULL_COVERAGE_THRESHOLD = 0.90
 #: for the inlier set to still count as consecutive.
 DEFAULT_MAX_CONSECUTIVE_GAP = 5.0
 
+#: Default success probability for RANSAC's adaptive termination
+#: (Fischler & Bolles 1981: k = log(1-p) / log(1-w^2)).
+DEFAULT_RANSAC_CONFIDENCE = 0.99
+
+#: Minimum RANSAC rounds before adaptive termination may kick in.
+_RANSAC_MIN_ITERATIONS = 32
+
 
 def fit_temporal_alignment(
     matches: list[tuple[float, float, float]],
@@ -511,12 +533,28 @@ def fit_temporal_alignment(
     residual_threshold: float = DEFAULT_RESIDUAL_THRESHOLD,
     ransac_iterations: int = 1000,
     random_seed: int | None = None,
+    *,
+    weight_by_score: bool = True,
+    ransac_confidence: float = DEFAULT_RANSAC_CONFIDENCE,
 ) -> dict:
     """Fit ``t_ref = slope * t_query + intercept`` on match points via RANSAC.
 
     Each match is a ``(t_query, t_ref, match_score)`` triple from an external
     segment-matching system. The slope is the speed factor between the two
     tracks, the intercept the time offset.
+
+    Two refinements over vanilla RANSAC:
+
+    * **Score-weighted sampling** (``weight_by_score``, default True): the
+      hypothesis pairs are drawn with probability proportional to each
+      point's ``match_score``, so trustworthy correspondences seed the model
+      more often and low-score junk seeds it less. Inlier counting is
+      unaffected — weighting only biases which hypotheses get tried.
+    * **Adaptive termination** (Fischler & Bolles 1981): after each new best
+      consensus, the theoretically sufficient iteration count
+      ``k = log(1-p) / log(1 - w^2)`` (w = observed inlier ratio) is
+      recomputed, and sampling stops once ``k`` rounds have run — typically
+      well under ``ransac_iterations`` on clean data.
 
     Args:
         matches: Match points as ``(t_query, t_ref, match_score)`` triples.
@@ -527,8 +565,12 @@ def fit_temporal_alignment(
             fits outside it are rejected.
         residual_threshold: Max ``|t_ref - predicted|`` in seconds for a
             point to count as an inlier (default 0.5).
-        ransac_iterations: Number of RANSAC sampling rounds (default 1000).
+        ransac_iterations: Max RANSAC sampling rounds (default 1000).
         random_seed: Optional seed for reproducible sampling.
+        weight_by_score: Sample hypothesis pairs proportionally to
+            ``match_score`` (default True). Set False for uniform sampling.
+        ransac_confidence: Target success probability for adaptive
+            termination (default 0.99).
 
     Returns:
         A dict with ``slope``, ``intercept``, ``inlier_count``,
@@ -554,11 +596,23 @@ def fit_temporal_alignment(
     rng = np.random.default_rng(random_seed)
     slope_min, slope_max = slope_bounds
 
+    sample_p = None
+    if weight_by_score:
+        scores = np.clip(points[:, 2], 0.0, None)
+        total = scores.sum()
+        # Weighted draws need at least two nonzero weights; otherwise fall
+        # back to uniform sampling.
+        if total > 0 and np.count_nonzero(scores) >= 2:
+            sample_p = scores / total
+
     best_inliers: np.ndarray | None = None
     best_count = 0
+    needed_iterations = ransac_iterations
 
-    for _ in range(ransac_iterations):
-        i, j = rng.choice(n, size=2, replace=False)
+    for iteration in range(ransac_iterations):
+        if iteration >= max(needed_iterations, _RANSAC_MIN_ITERATIONS):
+            break
+        i, j = rng.choice(n, size=2, replace=False, p=sample_p)
         dt = t_query[j] - t_query[i]
         if dt == 0.0:
             continue
@@ -572,6 +626,15 @@ def fit_temporal_alignment(
         if count > best_count:
             best_count = count
             best_inliers = inliers
+            # Fischler-Bolles: iterations needed so that, with probability
+            # ransac_confidence, at least one sample was all-inlier.
+            w2 = (count / n) ** 2
+            if w2 >= 1.0:
+                needed_iterations = iteration + 1
+            elif w2 > 0.0:
+                needed_iterations = math.ceil(
+                    math.log(1.0 - ransac_confidence) / math.log(1.0 - w2)
+                )
 
     if best_inliers is None or best_count < min_inliers:
         return failure
@@ -716,9 +779,7 @@ def classify_edit(
         ransac_iterations=ransac_iterations,
         random_seed=random_seed,
     )
-    coverage = compute_coverage(
-        matches, fit["inlier_indices"], query_duration, ref_duration
-    )
+    coverage = compute_coverage(matches, fit["inlier_indices"], query_duration, ref_duration)
 
     if not fit["fit_succeeded"]:
         edit_type_hint = "no_relation"
@@ -804,12 +865,10 @@ def classify_instrumental_pair(
     vocal_gap = abs(vocal_coverage_a - vocal_coverage_b)
 
     a_vocal_b_instrumental = (
-        vocal_coverage_a >= vocal_present_threshold
-        and vocal_coverage_b <= vocal_absent_threshold
+        vocal_coverage_a >= vocal_present_threshold and vocal_coverage_b <= vocal_absent_threshold
     )
     b_vocal_a_instrumental = (
-        vocal_coverage_b >= vocal_present_threshold
-        and vocal_coverage_a <= vocal_absent_threshold
+        vocal_coverage_b >= vocal_present_threshold and vocal_coverage_a <= vocal_absent_threshold
     )
 
     is_pair = content_similarity >= content_threshold and (

@@ -69,9 +69,7 @@ def test_too_few_points_fails_fast_without_ransac(monkeypatch):
 def test_random_scatter_yields_no_relation():
     # Simulates upstream matching false positives: no consistent line exists.
     rng = np.random.default_rng(SEED)
-    matches = [
-        (float(t), float(rng.uniform(0, 300)), 0.5) for t in rng.uniform(0, 180, size=30)
-    ]
+    matches = [(float(t), float(rng.uniform(0, 300)), 0.5) for t in rng.uniform(0, 180, size=30)]
     r = classify_edit(matches, query_duration=180, ref_duration=300, random_seed=SEED)
     assert r["edit_type_hint"] == "no_relation"
     assert r["confidence"] == 0.0
@@ -177,3 +175,52 @@ def test_intercept_recovered():
     fit = fit_temporal_alignment(matches, random_seed=SEED)
     assert fit["fit_succeeded"] is True
     assert fit["intercept"] == pytest.approx(30.0, abs=0.1)
+
+
+def test_score_weighted_sampling_prefers_trusted_points():
+    # Two competing lines: the true one carries high match scores, a decoy
+    # of equal size carries near-zero scores. Weighted sampling must seed
+    # from the trusted points and recover the true line.
+    trusted = _line_matches(1.0, 0.0, np.arange(0, 46, 5), score=1.0)  # 10 points
+    decoy = _line_matches(1.5, 90.0, np.arange(0, 46, 5), score=1e-6)  # 10 points
+    fit = fit_temporal_alignment(trusted + decoy, random_seed=SEED)
+    assert fit["fit_succeeded"] is True
+    assert fit["slope"] == pytest.approx(1.0, abs=0.02)
+    assert fit["intercept"] == pytest.approx(0.0, abs=0.5)
+
+    # Uniform sampling on the same data is a coin flip between the two
+    # lines (both have 10 inliers) — only assert it still fits SOME line.
+    fit_uniform = fit_temporal_alignment(trusted + decoy, random_seed=SEED, weight_by_score=False)
+    assert fit_uniform["fit_succeeded"] is True
+
+
+def test_all_zero_scores_fall_back_to_uniform_sampling():
+    matches = _line_matches(1.0, 0.0, np.arange(0, 61, 5), score=0.0)
+    fit = fit_temporal_alignment(matches, random_seed=SEED)
+    assert fit["fit_succeeded"] is True
+    assert fit["slope"] == pytest.approx(1.0, abs=0.02)
+
+
+def test_adaptive_termination_stops_early_on_clean_data(monkeypatch):
+    # On all-inlier data the Fischler-Bolles bound is tiny, so sampling
+    # must stop well before the 1000-iteration budget. Count actual draws.
+    draws = []
+    original_rng = np.random.default_rng
+
+    class CountingRng:
+        def __init__(self, *args, **kwargs):
+            self._rng = original_rng(*args, **kwargs)
+
+        def choice(self, *a, **kw):
+            draws.append(1)
+            return self._rng.choice(*a, **kw)
+
+        def __getattr__(self, name):
+            return getattr(self._rng, name)
+
+    monkeypatch.setattr(np.random, "default_rng", CountingRng)
+
+    matches = _line_matches(1.0, 0.0, np.arange(0, 101, 5))
+    fit = fit_temporal_alignment(matches, random_seed=SEED)
+    assert fit["fit_succeeded"] is True
+    assert len(draws) < 100  # far below the 1000-iteration budget
