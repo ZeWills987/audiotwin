@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2
+
+- **suggest_relation: cover threshold recalibrated on real music** —
+  chroma-DTW similarity for UNRELATED real tracks already sits at
+  ~0.82-0.84 (measured on cross-platform test pairs), so the previous
+  0.60 default would have emitted a COVER hypothesis for any pair.
+  `cover_similarity_threshold` now defaults to 0.85 (related versions
+  measured 0.86-0.99). The margin is thin — an inherent limit of the
+  classical chroma-DTW family.
+
 ## 0.4.1
 
 - **neural: cosine calibration** — raw Sample-ID cosines live in a

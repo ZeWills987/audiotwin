@@ -89,11 +89,11 @@ def test_confidences_carried_from_sources():
             "aligned_hashes": 31,
             "coverage_query": 0.2,
         },
-        cover_result={"similarity": 0.81, "transposition_semitones": 5},
+        cover_result={"similarity": 0.91, "transposition_semitones": 5},
     )
     by_relation = {h["relation"]: h for h in result["hypotheses"]}
     assert by_relation["SAMPLE"]["confidence"] == 0.62
-    assert by_relation["COVER"]["confidence"] == 0.81
+    assert by_relation["COVER"]["confidence"] == 0.91
 
 
 def test_edit_full_match_is_not_an_edit_hypothesis():

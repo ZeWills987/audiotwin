@@ -897,7 +897,13 @@ def classify_instrumental_pair(
 # --- Convenience heuristic aggregator ----------------------------------------
 
 #: Default cover-similarity floor for a COVER hypothesis.
-DEFAULT_COVER_SIMILARITY_THRESHOLD = 0.60
+# Measured on real music (cross-platform test pairs): DTW cover similarity
+# for UNRELATED tracks already sits at ~0.82-0.84 (chroma-DTW's floor on
+# real, produced music is high), while genuinely related versions measured
+# 0.86 (live) to 0.99 (same recording). 0.85 splits the observed
+# distributions; the margin is thin — an inherent limit of classical
+# chroma-DTW, documented in the README.
+DEFAULT_COVER_SIMILARITY_THRESHOLD = 0.85
 
 
 def suggest_relation(
