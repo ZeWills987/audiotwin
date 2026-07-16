@@ -32,6 +32,10 @@ pip install "audiotwin[landmark]"  # + SAMPLE/MASHUP (adds scipy)
 pip install "audiotwin[cover]"     # + COVER (adds librosa)
 pip install "audiotwin[all]"       # all analysis extras (NOT torch)
 
+# Straight from git (note the 'name[extra] @ URL' syntax — the old
+# '#egg=name[extra]' fragment is rejected by modern pip):
+pip install "audiotwin[all] @ git+https://github.com/ZeWills987/audiotwin.git"
+
 # Optional neural signal (PyTorch ~2 GB — deliberately outside [all]):
 pip install "audiotwin[neural]"
 pip install -e "git+https://github.com/sony/sampleid.git#egg=sampleid"
