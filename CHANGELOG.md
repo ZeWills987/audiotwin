@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- **suggest_relation: new REMIX hypothesis** — accepts a
+  `remix_result` (the output of `neural_localized_match` run on
+  separated VOCAL STEMS): a remix that keeps the original vocals over
+  a new instrumentation is invisible to every full-mix signal but
+  aligns on the stems. Priority slots between SAMPLE and EDIT.
+  Validated on a real kept-vocals remix (stems aligned at slope 0.96
+  with 11 coherent points while all full-mix signals were silent).
+
 ## 0.5.1
 
 - **neural: GPU support** — the inference device is auto-detected

@@ -116,6 +116,37 @@ def test_custom_cover_threshold():
     assert _relations(result) == ["COVER"]
 
 
+def test_remix_hypothesis_from_stems_match():
+    remix = {"found": True, "slope": 0.96, "inlier_count": 11, "confidence": 0.45}
+    result = suggest_relation(remix_result=remix)
+    assert _relations(result) == ["REMIX"]
+    assert result["hypotheses"][0]["confidence"] == 0.45
+    assert "stems" in result["hypotheses"][0]["evidence"]
+
+    # Not found -> no hypothesis.
+    assert _relations(suggest_relation(remix_result={"found": False})) == ["NO_RELATION"]
+
+
+def test_remix_priority_between_sample_and_edit():
+    result = suggest_relation(
+        sample_result={
+            "is_localized_match": True,
+            "confidence": 0.6,
+            "aligned_hashes": 30,
+            "coverage_query": 0.2,
+        },
+        remix_result={"found": True, "slope": 1.0, "inlier_count": 12, "confidence": 0.5},
+        edit_result={
+            "edit_type_hint": "trim_or_extend",
+            "confidence": 0.9,
+            "slope": 1.0,
+            "coverage_query": 1.0,
+            "coverage_ref": 0.5,
+        },
+    )
+    assert _relations(result) == ["SAMPLE", "REMIX", "EDIT"]
+
+
 def test_evidence_strings_present():
     result = suggest_relation(chromaprint_score=0.95, nfp_score=0.97)
     hypothesis = result["hypotheses"][0]

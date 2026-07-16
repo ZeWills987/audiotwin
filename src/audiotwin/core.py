@@ -919,6 +919,7 @@ def suggest_relation(
     mashup_result: dict | None = None,
     cover_result: dict | None = None,
     instrumental_result: dict | None = None,
+    remix_result: dict | None = None,
     *,
     cover_similarity_threshold: float = DEFAULT_COVER_SIMILARITY_THRESHOLD,
     duplicate_threshold: float = DEFAULT_CHROMAPRINT_THRESHOLD,
@@ -934,11 +935,11 @@ def suggest_relation(
     of reading each result dict.
 
     Priority order (highest first, documented contract):
-    ``DUPLICATE > REMASTER > MASHUP > SAMPLE (localized) > EDIT
-    (speed/trim) > INSTRUMENTAL > COVER``. Each hypothesis carries the
-    confidence of its source result unchanged. When nothing clears its
-    threshold, the single hypothesis ``NO_RELATION`` (confidence 0.0) is
-    returned.
+    ``DUPLICATE > REMASTER > MASHUP > SAMPLE (localized) > REMIX (kept
+    stems) > EDIT (speed/trim) > INSTRUMENTAL > COVER``. Each hypothesis
+    carries the confidence of its source result unchanged. When nothing
+    clears its threshold, the single hypothesis ``NO_RELATION``
+    (confidence 0.0) is returned.
 
     All inputs are optional:
 
@@ -950,6 +951,13 @@ def suggest_relation(
         mashup_result: Output of :func:`audiotwin.landmark.classify_mashup`.
         cover_result: Output of :func:`audiotwin.cover.cover_similarity`.
         instrumental_result: Output of :func:`classify_instrumental_pair`.
+        remix_result: Output of
+            :func:`audiotwin.neural.neural_localized_match` run on
+            separated VOCAL STEMS (the README's "stems pattern"): a remix
+            that keeps the original vocals over a new instrumentation is
+            invisible to full-mix matching but aligns on the stems. Any
+            dict with ``found``, ``slope``, ``inlier_count`` and
+            ``confidence`` works.
         cover_similarity_threshold: Similarity floor for a COVER
             hypothesis (default 0.60).
         duplicate_threshold: Forwarded to :func:`classify_relation`
@@ -1014,6 +1022,20 @@ def suggest_relation(
                 "evidence": (
                     f"{sample_result['aligned_hashes']} aligned hashes localized to "
                     f"{sample_result['coverage_query']:.0%} of the query"
+                ),
+            }
+        )
+
+    if remix_result is not None and remix_result.get("found"):
+        hypotheses.append(
+            {
+                "relation": "REMIX",
+                "confidence": remix_result["confidence"],
+                "evidence": (
+                    f"separated stems align (slope="
+                    f"{remix_result.get('slope', 0.0):.2f}, "
+                    f"{remix_result.get('inlier_count', 0)} coherent points) "
+                    f"while the full mixes don't — kept-stem remix signature"
                 ),
             }
         )
