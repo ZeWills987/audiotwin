@@ -210,6 +210,14 @@ def combine_scores(
 ) -> dict:
     """Merge the level-0/1/2 signals into a final duplicate verdict.
 
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
+
     Decision logic:
 
     * ``file_hash_match`` is ``True`` → duplicate, ``confidence = 1.0``
@@ -337,6 +345,14 @@ def classify_relation(
     remaster_nfp_threshold: float = DEFAULT_REMASTER_NFP_THRESHOLD,
 ) -> dict:
     """Classify the relation between two tracks from their similarity scores.
+
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
 
     REMASTER is the signature of NFP staying high while Chromaprint drops —
     same structural content, different spectral texture (EQ, dynamics, a
@@ -727,6 +743,14 @@ def classify_edit(
 ) -> dict:
     """Derive an edit-type hint from segment match points.
 
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
+
     Combines :func:`fit_temporal_alignment` and :func:`compute_coverage`.
     No audio is decoded — the inputs are match points already produced by an
     external segment-matching system.
@@ -839,6 +863,14 @@ def classify_instrumental_pair(
 ) -> dict:
     """Detect the instrumental/karaoke pattern between two tracks.
 
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
+
     The pattern: same musical content, one track has vocals, the other has
     (almost) none. Pure score arithmetic — no audio is decoded and no new
     dependency is involved.
@@ -928,6 +960,14 @@ def suggest_relation(
 ) -> dict:
     """Aggregate whichever analysis results are available into an ORDERED
     list of relation hypotheses.
+
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
 
     **This is a rule-based convenience heuristic, NOT a trained
     classifier.** Production systems should train their own fusion on

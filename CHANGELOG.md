@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0
+
+- **New `audiotwin.scores` module — raw signals, no decisions** —
+  `extract_all_scores(path_a, path_b, ...)` returns a flat,
+  JSON-serializable dict of every numeric signal (chromaprint, landmark
+  with `min_aligned_hashes=1`, cover, calibrated + raw neural
+  similarity, all-chunks match points, vocal coverages via the
+  vocalcoverage package) WITHOUT applying any threshold or emitting any
+  verdict. Contract: never calls the `classify_*` / `suggest_relation`
+  decision layer; missing extras log one warning and omit their fields;
+  embeddings excluded unless `include_embeddings=True`. This is the
+  intended entry point for production pipelines that train their own
+  decision layer; the `classify_*` conveniences are unchanged and now
+  point to it in their docstrings.
+
 ## 0.6.0
 
 - **suggest_relation: new REMIX hypothesis** — accepts a

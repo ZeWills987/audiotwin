@@ -410,6 +410,14 @@ def classify_sample(
 ) -> dict:
     """Decide whether a landmark match is a LOCALIZED sample.
 
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
+
     Reuses :func:`audiotwin.core.compute_coverage` on the match points: a
     match spanning less than ``localized_max_coverage`` of the query is a
     localized fragment (SAMPLE territory); anything wider is a global
@@ -475,6 +483,14 @@ def classify_mashup(
 ) -> dict:
     """Detect a MASHUP pattern: strong matches against several distinct
     tracks covering mostly disjoint regions of the query.
+
+    Note:
+        Cette fonction APPLIQUE des seuils et rend un verdict. Les
+        pipelines qui construisent leur propre couche de décision (ML ou
+        règles maison) doivent utiliser
+        :func:`audiotwin.scores.extract_all_scores`, qui expose les
+        signaux bruts sans aucune décision.
+
 
     Sources are accepted greedily by descending ``aligned_hashes``; a
     candidate is rejected when its query-time region overlaps an already

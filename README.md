@@ -11,6 +11,18 @@ canonical-track selection, final verdicts tuned for your catalog). Those
 stay with the caller. Think of it as the analysis layer of a larger
 pipeline.
 
+**Two ways to consume it, pick per use case:**
+
+- **Raw signals, no decisions** — `audiotwin.scores.extract_all_scores()`
+  returns a flat, JSON-serializable dict of every numeric signal, with no
+  thresholds applied and no verdicts. This is the path for production
+  pipelines that train their own decision layer (XGBoost, neural fusion,
+  hand-tuned rules).
+- **Heuristic conveniences** — `detect()`, `classify_*()` and
+  `suggest_relation()` apply documented default thresholds and return
+  verdicts. Quick results without building an ML pipeline; every
+  threshold stays overridable.
+
 ## Modules × relations
 
 | Relation | What it means | Module / function | Extra needed |
@@ -346,6 +358,31 @@ code runs ~10-50x faster, nothing else to change. Force a device with
 the `device` parameter or the `AUDIOTWIN_DEVICE` environment variable
 (`cuda`, `cuda:1`, `mps`, `cpu`). CPU-only works everywhere (no GPU
 required).
+
+## Raw scores for your own decision layer: `audiotwin.scores`
+
+```python
+from audiotwin.scores import extract_all_scores
+
+scores = extract_all_scores(
+    "track_a.mp3", "track_b.mp3",
+    include_neural=True,                  # off by default (expensive)
+    include_vocal=True,                   # needs pre-separated stems:
+    vocal_stem_a="a_vocals.wav",
+    vocal_stem_b="b_vocals.wav",
+)
+# -> flat JSON-serializable dict: file_hash_match, chromaprint_score,
+#    landmark_* (min_aligned_hashes=1 — nothing filtered),
+#    cover_* , neural_similarity (+ _raw), *_match_points, vocal_coverage_*
+#    ... and NO verdict, NO threshold applied anywhere.
+```
+
+Contract: this function never calls the decision layer. Missing extras
+are not errors — their fields are simply absent (one warning logged).
+The `*_match_points` fields feed `fit_temporal_alignment()` /
+`classify_edit()` directly if you want to run the RANSAC geometry with
+your own thresholds. Set `include_embeddings=True` to also get the
+fixed-size 2DFTM vectors for external indexing.
 
 ## Aggregating everything: `suggest_relation()`
 
