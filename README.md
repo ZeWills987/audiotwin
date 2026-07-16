@@ -275,6 +275,31 @@ print(r["is_instrumental_pair"], r["vocal_track"])  # True "a"
 audiotwin deliberately ships no vocal detector — feed it coverages from
 whatever VAD you trust.
 
+The companion library
+[vocalcoverage](https://github.com/ZeWills987/vocalcoverage) was built
+precisely to produce this input: given a mix and an already-separated vocal
+stem, it measures per-frame vocal presence (RMS ratio + harmonic f0
+confirmation via pyin) and returns a `vocal_coverage` in `[0, 1]`. The full
+chain, with a separator of your choice upstream:
+
+```python
+from vocalcoverage import analyze
+from audiotwin import classify_instrumental_pair
+from audiotwin.cover import cover_similarity
+
+# Stems produced upstream (Demucs, audio-separator, ...):
+#   a_vocals.wav — vocal stem of track A
+#   b_vocals.wav — vocal stem of track B
+
+content = cover_similarity("track_a.mp3", "track_b.mp3")
+
+r = classify_instrumental_pair(
+    content_similarity=content["similarity"],
+    vocal_coverage_a=analyze("track_a.mp3", "a_vocals.wav")["vocal_coverage"],
+    vocal_coverage_b=analyze("track_b.mp3", "b_vocals.wav")["vocal_coverage"],
+)
+```
+
 ## Aggregating everything: `suggest_relation()`
 
 ```python
