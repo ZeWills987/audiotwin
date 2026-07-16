@@ -49,8 +49,13 @@ DEFAULT_NFP_THRESHOLD = 0.90
 #: for a possible REMASTER, below the duplicate threshold.
 DEFAULT_REMASTER_CHROMAPRINT_MIN = 0.60
 
-#: Default NFP similarity required to confirm a REMASTER.
-DEFAULT_REMASTER_NFP_THRESHOLD = 0.90
+#: Default NFP similarity required to confirm a REMASTER. Calibrated on
+#: real music with audiotwin.neural's calibrated scores: a true remaster
+#: measured 0.83 (the reworked signal drifts the embedding a little),
+#: while covers/live measured <= 0.46 and unrelated < 0.06 — 0.75 splits
+#: the same-recording family from everything else with wide margins.
+#: (detect()'s DUPLICATE confirmation keeps its own stricter 0.90.)
+DEFAULT_REMASTER_NFP_THRESHOLD = 0.75
 
 # Number of bits per raw Chromaprint sub-fingerprint (uint32).
 _BITS_PER_WORD = 32
@@ -367,7 +372,7 @@ def classify_relation(
         remaster_chromaprint_max: Upper Chromaprint bound considered for a
             REMASTER, i.e. the duplicate threshold (default 0.85).
         remaster_nfp_threshold: NFP confirmation threshold for REMASTER
-            (default 0.90).
+            (default 0.75).
 
     Returns:
         A dict with ``relation_type`` (``"DUPLICATE"`` | ``"REMASTER"`` |
@@ -445,7 +450,7 @@ def detect_relation(
         remaster_chromaprint_max: Upper Chromaprint bound for REMASTER
             (default 0.85).
         remaster_nfp_threshold: NFP confirmation threshold for REMASTER
-            (default 0.90).
+            (default 0.75).
 
     Returns:
         A dict with ``track_a``, ``track_b``, ``file_hash_match``,
@@ -952,7 +957,7 @@ def suggest_relation(
         remaster_chromaprint_min: Forwarded to :func:`classify_relation`
             (default 0.60).
         remaster_nfp_threshold: Forwarded to :func:`classify_relation`
-            (default 0.90).
+            (default 0.75).
 
     Returns:
         ``{"hypotheses": [{"relation", "confidence", "evidence"}, ...]}``

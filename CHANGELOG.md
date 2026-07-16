@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.3
+
+- **classify_relation: REMASTER NFP threshold recalibrated on real
+  music** — with audiotwin.neural's calibrated scores, a true remaster
+  measured nfp 0.83 (the reworked signal drifts the embedding), while
+  covers/live measured <= 0.46 and unrelated < 0.06. The 0.90 default
+  (tuned for same-master confirmation) wrongly rejected real
+  remasters; `remaster_nfp_threshold` now defaults to 0.75, splitting
+  the same-recording family from everything else with wide margins.
+  detect()'s DUPLICATE confirmation keeps its stricter 0.90.
+
 ## 0.4.2
 
 - **suggest_relation: cover threshold recalibrated on real music** —

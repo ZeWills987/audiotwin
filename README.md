@@ -143,7 +143,7 @@ content, different spectral texture.
 | `chromaprint_score`                                 | `nfp_score`                       | `relation_type` |
 | ---------------------------------------------------- | ---------------------------------- | ---------------- |
 | `≥ duplicate_threshold` (0.85)                        | any                                 | `DUPLICATE`       |
-| `remaster_chromaprint_min` (0.60) `≤ … <` `duplicate_threshold` | `≥ remaster_nfp_threshold` (0.90) | `REMASTER`        |
+| `remaster_chromaprint_min` (0.60) `≤ … <` `duplicate_threshold` | `≥ remaster_nfp_threshold` (0.75) | `REMASTER`        |
 | `remaster_chromaprint_min` (0.60) `≤ … <` `duplicate_threshold` | `< remaster_nfp_threshold` or absent | `NO_RELATION`     |
 | `< remaster_chromaprint_min` (0.60)                   | any                                 | `NO_RELATION`     |
 
