@@ -124,11 +124,12 @@
     efficacité mesurée et estimée de chaque processus, et techniques modernes de la littérature
     scientifique pour dépasser les limites actuelles.</p>
     <div class="stats">
-      <span class="stat">version <b>0.2.0</b></span>
-      <span class="stat"><b>8</b> types de relations détectées</span>
-      <span class="stat"><b>84</b> tests verts</span>
+      <span class="stat">version <b>0.6.0</b></span>
+      <span class="stat"><b>9</b> types de relations détectées</span>
+      <span class="stat"><b>99</b> tests verts</span>
       <span class="stat">cœur : <b>numpy seul</b> + fpcalc/ffmpeg</span>
-      <span class="stat">extras : <b>[landmark]</b> scipy · <b>[cover]</b> librosa</span>
+      <span class="stat">extras : <b>[landmark]</b> scipy · <b>[cover]</b> librosa · <b>[neural]</b> torch</span>
+      <span class="stat">validé sur <b>vraie musique</b> (banc d'essai multi-plateformes)</span>
     </div>
   </div>
 </header>
@@ -193,6 +194,11 @@ flowchart LR
     OTI["optimal_transposition"]
     DTW["DTW cosinus"]
   end
+  subgraph NEU["neural.py — extra torch (Sample-ID, MIT)"]
+    NS["neural_similarity — NFP"]
+    NMP["neural_match_points"]
+    NLM["neural_localized_match"]
+  end
   A --> H --> AGG
   A --> FP --> CMP --> REL --> AGG
   MP --> ED --> AGG
@@ -201,9 +207,12 @@ flowchart LR
   IDX -. "match_points" .-> ED
   A --> CHR --> OTI --> DTW --> AGG
   DTW -. "similarité contenu" .-> INS
+  A --> NS -. "nfp_score" .-> REL
+  NMP -. "match_points" .-> ED
+  NLM -. "sur stems vocaux = REMIX" .-> AGG
   EXT --> REL
   EXT --> INS --> AGG
-  AGG --> OUT["Hypothèses ordonnées<br/>DUPLICATE › REMASTER › MASHUP ›<br/>SAMPLE › EDIT › INSTRUMENTAL › COVER"]
+  AGG --> OUT["Hypothèses ordonnées<br/>DUPLICATE › REMASTER › MASHUP › SAMPLE ›<br/>REMIX › EDIT › INSTRUMENTAL › COVER"]
 </pre>
 <div class="caption">Architecture globale : trois familles de signaux convergent vers l'agrégateur. Les flèches pointillées sont des ponts inter-modules (les <code>match_points</code> du landmark alimentent directement classify_edit).</div>
 </div>
@@ -212,7 +221,8 @@ flowchart LR
 <thead><tr><th>Relation</th><th>Signification</th><th>Signal exploité</th><th>Module</th><th>Dépendance</th></tr></thead>
 <tbody>
 <tr><td><b>DUPLICATE</b></td><td>Même master, encodage différent</td><td>Hash exact, puis similarité bit à bit d'empreintes spectrales</td><td><code>detect()</code></td><td>cœur + fpcalc</td></tr>
-<tr><td><b>REMASTER</b></td><td>Même enregistrement, signal retravaillé (EQ, dynamique)</td><td>Divergence Chromaprint↓ / NFP↑ — même structure, texture différente</td><td><code>classify_relation()</code></td><td>cœur</td></tr>
+<tr><td><b>REMASTER</b></td><td>Même enregistrement, signal retravaillé (EQ, dynamique)</td><td>Divergence Chromaprint↓ / NFP↑ — même structure, texture différente</td><td><code>classify_relation()</code> (+ <code>neural_similarity()</code> comme NFP)</td><td>cœur (+ [neural] pour l'autonomie)</td></tr>
+<tr><td><b>REMIX</b></td><td>Voix originale conservée sur instrumentation nouvelle</td><td>Les stems vocaux séparés s'alignent alors que les mixes complets sont muets</td><td><code>neural_localized_match()</code> sur stems → <code>suggest_relation(remix_result=…)</code></td><td>[neural] + séparateur externe</td></tr>
 <tr><td><b>EDIT</b></td><td>Même enregistrement, timeline modifiée (coupe, extension, vitesse)</td><td>Géométrie des points de correspondance (pente, couverture)</td><td><code>classify_edit()</code></td><td>cœur</td></tr>
 <tr><td><b>SAMPLE</b></td><td>Fragment réutilisé dans un autre morceau</td><td>Pics spectraux alignés, localisés dans le temps</td><td><code>landmark</code></td><td>[landmark]</td></tr>
 <tr><td><b>MASHUP</b></td><td>Fragments de plusieurs morceaux combinés</td><td>Matches forts sur ≥2 sources, régions disjointes</td><td><code>landmark</code></td><td>[landmark]</td></tr>
@@ -321,8 +331,8 @@ disponibles à travers une grille plus fine.</p>
 <thead><tr><th>chromaprint_score</th><th>nfp_score</th><th>relation_type</th><th>confiance</th></tr></thead>
 <tbody>
 <tr><td class="fmt">≥ 0.85</td><td>quelconque</td><td><b>DUPLICATE</b></td><td>logique de combine_scores (réutilisée, pas dupliquée)</td></tr>
-<tr><td class="fmt">0.60 ≤ s &lt; 0.85</td><td class="fmt">≥ 0.90</td><td><b>REMASTER</b></td><td class="fmt">nfp_score × 0.9</td></tr>
-<tr><td class="fmt">0.60 ≤ s &lt; 0.85</td><td class="fmt">&lt; 0.90 ou absent</td><td><b>NO_RELATION</b></td><td class="fmt">0.0</td></tr>
+<tr><td class="fmt">0.60 ≤ s &lt; 0.85</td><td class="fmt">≥ 0.75</td><td><b>REMASTER</b></td><td class="fmt">nfp_score × 0.9</td></tr>
+<tr><td class="fmt">0.60 ≤ s &lt; 0.85</td><td class="fmt">&lt; 0.75 ou absent</td><td><b>NO_RELATION</b></td><td class="fmt">0.0</td></tr>
 <tr><td class="fmt">&lt; 0.60</td><td>quelconque, même 0.99</td><td><b>NO_RELATION</b></td><td class="fmt">0.0</td></tr>
 </tbody>
 </table></div>
@@ -334,8 +344,14 @@ faux positif Chromaprint sur un morceau très répétitif.</li>
 <li><b>Pourquoi un plancher à 0.60 même si le NFP est très fort ?</b> En dessous, le lien
 spectral est jugé trop ténu pour être fiable — on refuse de classifier sur la seule foi du
 signal structurel. Choix documenté et testé explicitement.</li>
-<li><b>Sans NFP, pas de REMASTER possible</b> : le repo ne peut distinguer REMASTER d'une simple
-coïncidence spectrale. C'est une limite assumée et documentée du README.</li>
+<li><b>Le NFP est désormais fourni en interne</b> (extra <code>[neural]</code>,
+<code>neural_similarity()</code>) — REMASTER fonctionne en autonomie. Sans l'extra, la limite
+d'origine s'applique : impossible de distinguer REMASTER d'une coïncidence spectrale.</li>
+<li><b>Le seuil NFP de 0.75 est un étalonnage de terrain, pas un seuil validé</b> : mesuré sur
+l'échelle calibrée du module neural (remaster réel ≈ 0.83, covers/live ≤ 0.46, sans-rapport
+&lt; 0.06), mais sur un petit échantillon. Règle du projet : les défauts ne bougent plus sur la
+foi du banc d'essai — toute recalibration passera par une évaluation grand catalogue
+(vérité terrain synthétique, split calibration/test).</li>
 <li>Le champ <code>score_gap = nfp_score − chromaprint_score</code> est retourné : c'est
 <em>la</em> signature du remaster (grand écart positif), affichée en priorité par la CLI.</li>
 </ul>
@@ -567,11 +583,16 @@ ni clairement vocale ni clairement instrumentale → on refuse de trancher.</p>
 <p>Commodité pour l'utilisateur : passer les résultats <em>disponibles</em> (tous optionnels)
 et recevoir une liste d'hypothèses <b>ordonnée par priorité fixe</b> — pas par confiance :</p>
 
-<div class="formula">DUPLICATE › REMASTER › MASHUP › SAMPLE › EDIT › INSTRUMENTAL › COVER
+<div class="formula">DUPLICATE › REMASTER › MASHUP › SAMPLE › REMIX › EDIT › INSTRUMENTAL › COVER
 
 priorité = spécificité du signal : un hash identique est une preuve quasi certaine ;
 une similarité chroma est l'indice le plus faible. Chaque hypothèse garde la
-confiance de son résultat source, avec une chaîne "evidence" lisible.</div>
+confiance de son résultat source, avec une chaîne "evidence" lisible.
+
+REMIX (v0.6.0) : alimenté par remix_result = neural_localized_match() exécuté sur
+les STEMS VOCAUX séparés — un remix garde-voix est invisible sur les mixes complets
+mais ses stems s'alignent (validé en réel : pente 0.96, 11 points cohérents, alors
+que tous les signaux full-mix étaient muets).</div>
 
 <p>Documenté en toutes lettres dans le docstring et le README : <b>c'est une heuristique à base
 de règles, PAS un classifieur entraîné</b>. Un système de production doit entraîner sa propre
@@ -705,25 +726,32 @@ La chaîne INSTRUMENTAL a été mesurée réellement de bout en bout : verdict c
   <td>Requête en milieu de piste, pitch, tempo</td>
 </tr>
 <tr>
-  <td><b>REMASTER</b></td><td>Mêmes scores + grille de seuils</td>
-  <td class="num">+ &lt; 1 µs</td>
-  <td>Entièrement conditionnée au NFP fourni — sans lui, indétectable par construction</td>
-  <td><span class="pill warn">conditionnel</span></td>
-  <td>Le NFP reste à brancher (aucun n'est embarqué)</td>
+  <td><b>REMASTER</b></td><td>Grille de seuils + NFP via <code>neural_similarity()</code> ([neural])</td>
+  <td class="num">~30-90 s/paire CPU, ~1-3 s GPU</td>
+  <td><b>Validé en réel</b> : remaster détecté (chromaprint 0.619 + nfp calibré 0.829 → REMASTER conf 0.75) ; covers/live correctement exclus (nfp ≤ 0.46)</td>
+  <td><span class="pill good">autonome</span></td>
+  <td>Seuil 0.75 = étalonnage terrain à confirmer sur grand catalogue</td>
 </tr>
 <tr>
-  <td><b>EDIT</b></td><td>match_points (landmark interne ou matcher externe) → RANSAC pondéré</td>
-  <td class="num">~1-2 s (points via landmark) + &lt; 1 ms</td>
-  <td>Pente/bornes exactes sur points propres (±0.02 testé) ; trim/extend fiable</td>
+  <td><b>EDIT</b></td><td>match_points (landmark, ou <code>neural_match_points()</code>) → RANSAC pondéré</td>
+  <td class="num">~1-2 s (landmark) ou ~30-90 s CPU / ~1-3 s GPU (neural) + &lt; 1 ms</td>
+  <td><b>Validé en réel</b> : nightcore détecté à pente 1.12 (cohérente avec le ratio de durées ET la transposition −2 demi-tons) là où le landmark était muet</td>
   <td><span class="pill good">bon</span></td>
-  <td>Un speed_change &gt; ~3 % casse les points landmark eux-mêmes — il faut alors un matcher amont robuste (NFP)</td>
+  <td>Micro-edits (&lt; ~5 % de la durée : censure de mots, intro raccourcie) géométriquement indistinguables d'un remaster</td>
 </tr>
 <tr>
-  <td><b>SAMPLE</b></td><td>LandmarkIndex (blanchi) → histogramme fusionné → classify_sample</td>
-  <td class="num">~1-2 s / requête (petit index)</td>
-  <td>Spécificité excellente (bruit blanc : zéro match, testé) ; offset à ±0.2 s ; bornes biaisées ≤ 3 s</td>
+  <td><b>REMIX</b> (v0.6.0)</td><td>Séparation vocale externe → <code>neural_localized_match()</code> sur stems → hypothèse REMIX</td>
+  <td class="num">séparation ~1,5× temps réel + match neural</td>
+  <td><b>Validé en réel</b> : remix garde-voix trouvé sur stems (pente 0.96, 11 points cohérents) alors que TOUS les signaux full-mix étaient muets</td>
   <td><span class="pill good">bon</span></td>
-  <td>Samples re-pitchés ou noyés sous overdub (limite Wang 2003 ; grille ±N demi-tons en palliatif)</td>
+  <td>Dépend de la qualité de séparation ; remix qui transforme aussi la voix (pitch fort, vocodeur) hors de portée</td>
+</tr>
+<tr>
+  <td><b>SAMPLE</b></td><td>LandmarkIndex (blanchi) → histogramme fusionné → classify_sample ; repli : <code>neural_localized_match()</code> (seuil bas + cohérence RANSAC)</td>
+  <td class="num">~1-2 s (landmark) ; + neural en repli</td>
+  <td>Landmark : spécificité excellente, offset ±0.2 s. Neural localisé <b>validé en réel</b> : fragment de 20 s sous overdub trouvé aux bornes exactes (score full-mix : 0.08 !)</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Sample re-pitché SOUS overdub : hors de portée même en neuronal (état de l'art mondial : mAP 0.603 sur Sample100) — limite assumée</td>
 </tr>
 <tr>
   <td><b>MASHUP</b></td><td>Idem + classify_mashup (régions percentiles)</td>
@@ -940,6 +968,28 @@ redistribuer — la plateforme ne redistribue alors ni code tiers ni poids, ce q
 question résiduelle. Ordre d'adoption : <b>1)</b> Demucs (déjà requis par la chaîne
 INSTRUMENTAL), <b>2)</b> Sample-ID Sony (débloque SAMPLE transformé + fournit le signal NFP
 manquant de REMASTER), <b>3)</b> CLEWS (fait passer COVER de MAP ~0.4 à ~0.87).</p>
+
+<div class="callout">
+<span class="tag">Statut : l'étape 2 est implémentée (v0.4.0 → v0.6.0)</span>
+<code>audiotwin.neural</code> enveloppe Sample-ID exactement selon ce plan : checkpoint MIT
+téléchargé au premier usage (jamais redistribué), <code>neural_similarity()</code> alimente
+REMASTER, <code>neural_match_points()</code> alimente EDIT, <code>neural_localized_match()</code>
+(v0.5.0) couvre SAMPLE/MASHUP/REMIX localisés, mode <b>GPU auto-détecté</b> (v0.5.1 —
+<code>AUDIOTWIN_DEVICE</code>), et un orchestrateur d'offload (<code>gpuoffload</code>) permet de
+déléguer les calculs à un pod GPU loué à la demande, détruit après inactivité.
+</div>
+
+<div class="callout bug">
+<span class="tag">Leçon de production nº3 — les scores neuronaux bruts sont inutilisables tels quels</span>
+L'espace d'embedding de Sample-ID est <b>compressé</b> : mesuré sur vraie musique, deux morceaux
+sans aucun rapport ont déjà ~0.95 de cosinus brut (même master : ~0.999). Un score brut aurait
+validé REMASTER pour n'importe quelle paire. Tous les scores sont recalibrés par
+<span class="fmt">(cos − 0.95) / (1 − 0.95)</span> (plancher paramétrable) : sans-rapport ≈ 0.02,
+même master ≈ 0.98. Corollaire découvert en testant : l'audio <em>synthétique</em> est
+hors-domaine pour ce modèle (toutes les fixtures de tons s'embarquent quasi identiquement) —
+la discrimination ne se teste que sur de la vraie musique ; les tests unitaires vérifient la
+géométrie sur des embeddings fabriqués.
+</div>
 
 <h3>Et le RANSAC d'EDIT ?</h3>
 <p>C'est le processus le mieux noté du tableau — les alternatives modernes (MAGSAC++, LO-RANSAC,
