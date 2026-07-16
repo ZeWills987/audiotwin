@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "audiotwin"
-version = "0.3.0"
+version = "0.4.0"
 description = "Lightweight toolkit for detecting relations between audio files: duplicate, remaster, edit, sample, mashup, cover, instrumental."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,6 +31,12 @@ landmark = [
 ]
 cover = [
     "librosa>=0.10",
+]
+neural = [
+    # Deliberately NOT included in [all]: PyTorch is a ~2 GB install.
+    # Also requires the 'sampleid' package (MIT, not on PyPI):
+    #   pip install -e "git+https://github.com/sony/sampleid.git#egg=sampleid"
+    "torch>=2.0",
 ]
 all = [
     "scipy>=1.10",

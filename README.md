@@ -30,7 +30,11 @@ pipeline.
 pip install audiotwin              # core: DUPLICATE/REMASTER/EDIT/INSTRUMENTAL
 pip install "audiotwin[landmark]"  # + SAMPLE/MASHUP (adds scipy)
 pip install "audiotwin[cover]"     # + COVER (adds librosa)
-pip install "audiotwin[all]"       # everything
+pip install "audiotwin[all]"       # all analysis extras (NOT torch)
+
+# Optional neural signal (PyTorch ~2 GB — deliberately outside [all]):
+pip install "audiotwin[neural]"
+pip install -e "git+https://github.com/sony/sampleid.git#egg=sampleid"
 ```
 
 System dependencies:
@@ -299,6 +303,35 @@ r = classify_instrumental_pair(
     vocal_coverage_b=analyze("track_b.mp3", "b_vocals.wav")["vocal_coverage"],
 )
 ```
+
+## Neural signal (NFP) — `[neural]` extra
+
+Everywhere audiotwin accepts an "NFP score" from an external system,
+`audiotwin.neural` can now be that system: it wraps Sony's **Sample-ID**
+model (Riou, Serrà & Mitsufuji, ICASSP 2026 — MIT license, code *and*
+Zenodo checkpoint; downloaded on first use, never redistributed).
+
+```python
+from audiotwin import detect_relation
+from audiotwin.neural import neural_similarity, neural_match_points
+
+# 1) The missing REMASTER signal — plugs straight into detect()/detect_relation():
+nfp = neural_similarity("track_a.mp3", "track_b.mp3")
+verdict = detect_relation("track_a.mp3", "track_b.mp3", nfp_score=nfp["nfp_score"])
+
+# 2) A transformation-robust matcher for classify_edit() — survives the
+#    EQ/overdubs/speed edits that break landmark match points:
+from audiotwin import classify_edit
+points = neural_match_points("edited.mp3", "original.mp3")
+edit = classify_edit(points, query_duration=180.0, ref_duration=245.0)
+```
+
+`neural_similarity` returns exactly the `nfp_score` / `nfp_segments_matched`
+/ `nfp_coverage` triple that `detect`, `detect_relation` and
+`combine_scores` accept; `neural_match_points` returns the
+`(t_query, t_ref, score)` triples that `classify_edit` consumes. CPU
+inference works (no GPU required); the model chunks tracks into 5 s
+windows with 2.5 s hop.
 
 ## Aggregating everything: `suggest_relation()`
 

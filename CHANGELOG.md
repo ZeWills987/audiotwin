@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0
+
+- **New `[neural]` extra + `audiotwin.neural` module** — wraps Sony's
+  Sample-ID model (Riou, Serrà & Mitsufuji, ICASSP 2026; MIT license for
+  both code and the Zenodo checkpoint, downloaded on first use — nothing
+  is redistributed). Deliberately NOT part of `[all]` (PyTorch is a
+  ~2 GB install); also requires `pip install
+  -e git+https://github.com/sony/sampleid.git#egg=sampleid` (editable install required — upstream packaging omits its src/ subpackage in regular installs; not on PyPI).
+  - `neural_similarity()` produces the exact
+    `nfp_score`/`nfp_segments_matched`/`nfp_coverage` triple that
+    `detect()`/`detect_relation()`/`combine_scores()` accept — REMASTER
+    classification no longer requires an external system.
+  - `neural_match_points()` produces the `(t_query, t_ref, score)`
+    triples that `classify_edit()`/`fit_temporal_alignment()` consume —
+    a matcher robust to the EQ/overdub/speed transformations that break
+    landmark match points.
+  - `neural_embedding()` exposes the raw per-chunk embeddings (5 s
+    windows, 2.5 s hop, L2-normalized) for callers building their own
+    indexes.
+
 ## 0.3.0
 
 Robustness pass on the weakest processes identified in the efficiency
