@@ -124,9 +124,9 @@
     efficacité mesurée et estimée de chaque processus, et techniques modernes de la littérature
     scientifique pour dépasser les limites actuelles.</p>
     <div class="stats">
-      <span class="stat">version <b>0.6.0</b></span>
+      <span class="stat">version <b>0.7.0</b></span>
       <span class="stat"><b>9</b> types de relations détectées</span>
-      <span class="stat"><b>99</b> tests verts</span>
+      <span class="stat"><b>106</b> tests verts</span>
       <span class="stat">cœur : <b>numpy seul</b> + fpcalc/ffmpeg</span>
       <span class="stat">extras : <b>[landmark]</b> scipy · <b>[cover]</b> librosa · <b>[neural]</b> torch</span>
       <span class="stat">validé sur <b>vraie musique</b> (banc d'essai multi-plateformes)</span>
@@ -231,6 +231,21 @@ flowchart LR
 <tr><td><b>NO_RELATION</b></td><td>Aucun lien détectable</td><td>Aucun signal au-dessus de son seuil</td><td>tous</td><td>—</td></tr>
 </tbody>
 </table></div>
+
+<div class="callout">
+<span class="tag">Deux couches, deux publics (v0.7.0)</span>
+L'API expose désormais explicitement ses deux couches. <b>Couche signaux</b> :
+<code>audiotwin.scores.extract_all_scores()</code> retourne tous les signaux numériques bruts
+(dict plat, JSON-sérialisable) — <em>aucun seuil appliqué, aucun verdict</em> — pour les
+pipelines de production qui entraînent leur propre classifieur (XGBoost, fusion neuronale…).
+Le landmark y est interrogé avec <code>min_aligned_hashes=1</code> (rien n'est filtré), le
+neuronal fournit le score calibré ET le cosinus brut, et les <code>match_points</code> alimentent
+directement le RANSAC si l'appelant veut le lancer avec ses propres seuils. <b>Couche
+décisions</b> : les <code>classify_*</code> et <code>suggest_relation()</code>, documentés dans
+cette page — des commodités heuristiques à seuils par défaut, inchangées. Contrat garanti par
+les tests : la couche signaux n'appelle jamais la couche décision, et aucun champ de verdict ne
+peut apparaître dans sa sortie.
+</div>
 
 <div class="callout">
 <span class="tag">Pourquoi cette architecture en modules à extras ?</span>
