@@ -46,8 +46,19 @@ DEFAULT_CHUNK_SECONDS = 5.0
 #: Default hop between chunks in seconds (50% overlap).
 DEFAULT_CHUNK_HOP_SECONDS = 2.5
 
-#: Default cosine similarity above which a query chunk counts as matched.
+#: Default CALIBRATED similarity above which a query chunk counts as matched.
 DEFAULT_MATCH_THRESHOLD = 0.60
+
+#: Raw-cosine floor of the calibration. Sample-ID's embedding space is
+#: compressed: on real music, UNRELATED tracks already sit around 0.95 raw
+#: cosine while same-master pairs sit at ~0.999 (measured on real
+#: SoundCloud/YouTube pairs). Raw cosines would therefore wrongly clear
+#: detect()'s nfp thresholds for any pair; all scores are rescaled as
+#: ``(cos - floor) / (1 - floor)`` (clamped to [0, 1]) so unrelated ≈ 0 and
+#: same-master ≈ 0.98. If your catalog's genre mix differs, measure the
+#: mean best-cosine of a few unrelated pairs and pass it as
+#: ``cosine_floor``.
+DEFAULT_COSINE_FLOOR = 0.95
 
 #: Default batch size for embedding extraction.
 DEFAULT_BATCH_SIZE = 16
@@ -174,18 +185,27 @@ def neural_embedding(
     return matrix / norms
 
 
+def _calibrate(raw_cosine: np.ndarray, cosine_floor: float) -> np.ndarray:
+    """Rescale raw Sample-ID cosines to [0, 1] (see DEFAULT_COSINE_FLOOR)."""
+    return np.clip((raw_cosine - cosine_floor) / (1.0 - cosine_floor), 0.0, 1.0)
+
+
 def neural_similarity(
     path_a: str,
     path_b: str,
     match_threshold: float = DEFAULT_MATCH_THRESHOLD,
     chunk_seconds: float = DEFAULT_CHUNK_SECONDS,
     chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
+    cosine_floor: float = DEFAULT_COSINE_FLOOR,
     checkpoint_path: str | None = None,
 ) -> dict:
     """Neural content similarity between two files, in detect()'s NFP format.
 
-    Each chunk of A is compared (cosine) against every chunk of B; a chunk
-    "matches" when its best cosine clears ``match_threshold``.
+    Each chunk of A is compared (cosine) against every chunk of B, cosines
+    are CALIBRATED (see :data:`DEFAULT_COSINE_FLOOR` — raw Sample-ID
+    cosines live in a compressed range where unrelated music already scores
+    ~0.95); a chunk "matches" when its best calibrated score clears
+    ``match_threshold``.
 
     Returns a dict whose keys are named to plug STRAIGHT into
     :func:`audiotwin.core.detect` / :func:`detect_relation` /
@@ -206,10 +226,11 @@ def neural_similarity(
         checkpoint_path: Optional custom checkpoint.
 
     Returns:
-        A dict with ``nfp_score`` (mean over A's chunks of the best cosine
-        against B, clamped to [0, 1]), ``nfp_segments_matched`` (number of
-        A-chunks above the threshold) and ``nfp_coverage`` (that count over
-        A's total chunks).
+        A dict with ``nfp_score`` (mean over A's chunks of the best
+        CALIBRATED similarity against B, in [0, 1] — measured anchors:
+        same-master pairs ≈ 0.98, unrelated ≈ 0.0), ``nfp_segments_matched``
+        (number of A-chunks above the threshold) and ``nfp_coverage`` (that
+        count over A's total chunks).
     """
     emb_a = neural_embedding(
         path_a,
@@ -224,12 +245,12 @@ def neural_similarity(
         checkpoint_path=checkpoint_path,
     )
 
-    similarity_matrix = emb_a @ emb_b.T  # (chunks_a, chunks_b), cosine
-    best_per_chunk = similarity_matrix.max(axis=1)
+    similarity_matrix = emb_a @ emb_b.T  # (chunks_a, chunks_b), raw cosine
+    best_per_chunk = _calibrate(similarity_matrix.max(axis=1), cosine_floor)
 
     matched = int((best_per_chunk >= match_threshold).sum())
     return {
-        "nfp_score": float(np.clip(best_per_chunk.mean(), 0.0, 1.0)),
+        "nfp_score": float(best_per_chunk.mean()),
         "nfp_segments_matched": matched,
         "nfp_coverage": matched / len(best_per_chunk),
     }
@@ -241,12 +262,14 @@ def neural_match_points(
     match_threshold: float = DEFAULT_MATCH_THRESHOLD,
     chunk_seconds: float = DEFAULT_CHUNK_SECONDS,
     chunk_hop_seconds: float = DEFAULT_CHUNK_HOP_SECONDS,
+    cosine_floor: float = DEFAULT_COSINE_FLOOR,
     checkpoint_path: str | None = None,
 ) -> list[tuple[float, float, float]]:
     """Chunk-level correspondences in classify_edit()'s match-point format.
 
-    For each chunk of A whose best cosine against B clears the threshold,
-    emit ``(t_query, t_ref, score)`` at the two chunks' center times. The
+    For each chunk of A whose best CALIBRATED similarity against B (see
+    :data:`DEFAULT_COSINE_FLOOR`) clears the threshold, emit
+    ``(t_query, t_ref, score)`` at the two chunks' center times. The
     output feeds :func:`audiotwin.core.classify_edit` /
     :func:`fit_temporal_alignment` directly — a transformation-robust
     alternative to landmark match points (the embeddings survive EQ,
@@ -289,7 +312,7 @@ def neural_match_points(
         checkpoint_path=checkpoint_path,
     )
 
-    similarity_matrix = emb_a @ emb_b.T
+    similarity_matrix = _calibrate(emb_a @ emb_b.T, cosine_floor)
     center = chunk_seconds / 2.0
 
     points = []

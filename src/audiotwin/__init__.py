@@ -25,7 +25,7 @@ from audiotwin.core import (
     suggest_relation,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     "AudioTooShortError",

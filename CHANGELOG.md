@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1
+
+- **neural: cosine calibration** — raw Sample-ID cosines live in a
+  compressed range (measured on real cross-platform pairs: unrelated
+  music ~0.95, same-master ~0.999), so raw scores would wrongly clear
+  detect()'s nfp thresholds for ANY pair. All neural scores are now
+  rescaled as `(cos - floor) / (1 - floor)` with a measured default
+  floor of 0.95 (parametric via `cosine_floor`): same-master pairs now
+  score ~0.98, unrelated ~0.0. Match thresholds operate on the
+  calibrated scale.
+
 ## 0.4.0
 
 - **New `[neural]` extra + `audiotwin.neural` module** — wraps Sony's
