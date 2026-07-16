@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>audiotwin — Documentation technique complète</title>
+<style>
+  :root {
+    --bg: #FBFAF7; --surface: #FFFFFF; --ink: #20262E; --muted: #5C6673;
+    --accent: #0B7285; --accent-soft: #E0F1F4; --line: #E4E2DC;
+    --good: #2E7D46; --good-bg: #E3F2E7; --warn: #A66A00; --warn-bg: #FBF0DA; --bad: #B03A2E; --bad-bg: #FBE4E0;
+    --code-bg: #F2F1EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F1318; --surface: #171D25; --ink: #E6EAEF; --muted: #98A2AE;
+      --accent: #57D0DF; --accent-soft: #12333A; --line: #2A323C;
+      --good: #57C878; --good-bg: #14301D; --warn: #F2B441; --warn-bg: #33270D; --bad: #F27E6F; --bad-bg: #391511;
+      --code-bg: #1D242E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1318; --surface: #171D25; --ink: #E6EAEF; --muted: #98A2AE;
+    --accent: #57D0DF; --accent-soft: #12333A; --line: #2A323C;
+    --good: #57C878; --good-bg: #14301D; --warn: #F2B441; --warn-bg: #33270D; --bad: #F27E6F; --bad-bg: #391511;
+    --code-bg: #1D242E;
+  }
+  :root[data-theme="light"] {
+    --bg: #FBFAF7; --surface: #FFFFFF; --ink: #20262E; --muted: #5C6673;
+    --accent: #0B7285; --accent-soft: #E0F1F4; --line: #E4E2DC;
+    --good: #2E7D46; --good-bg: #E3F2E7; --warn: #A66A00; --warn-bg: #FBF0DA; --bad: #B03A2E; --bad-bg: #FBE4E0;
+    --code-bg: #F2F1EC;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", "Avenir Next", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.65; margin: 0;
+  }
+  code, pre, .formula, .fmt {
+    font-family: "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
+  }
+  header.hero {
+    border-bottom: 1px solid var(--line); padding: 3rem 1.5rem 2.2rem;
+    background: var(--surface);
+  }
+  .hero-inner { max-width: 1080px; margin: 0 auto; }
+  .hero h1 { font-size: 2.1rem; margin: 0 0 .4rem; letter-spacing: -.02em; text-wrap: balance; }
+  .hero h1 code { color: var(--accent); background: none; padding: 0; font-size: inherit; }
+  .hero p.sub { color: var(--muted); margin: 0 0 1.2rem; max-width: 68ch; }
+  .hero .stats { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .stat { border: 1px solid var(--line); border-radius: 6px; padding: .35rem .75rem; font-size: .82rem; color: var(--muted); background: var(--bg); }
+  .stat b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem 5rem; display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 2.5rem; }
+  @media (max-width: 1000px) { .wrap { grid-template-columns: minmax(0, 1fr); } nav.toc { position: static !important; max-height: none !important; border-right: none !important; } }
+  nav.toc {
+    position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto;
+    padding: 1.6rem 1rem 1.6rem 0; font-size: .85rem;
+  }
+  nav.toc .toc-title { text-transform: uppercase; letter-spacing: .08em; font-size: .7rem; color: var(--muted); margin-bottom: .7rem; }
+  nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: .28rem 0; border-left: 2px solid transparent; padding-left: .7rem; margin-left: -.7rem; }
+  nav.toc a:hover { color: var(--accent); }
+  nav.toc a b { color: var(--ink); font-weight: 600; }
+  main { min-width: 0; padding-top: 1.6rem; }
+  h2 {
+    font-size: 1.45rem; letter-spacing: -.015em; margin: 3.2rem 0 .3rem;
+    padding-top: 1.2rem; border-top: 2px solid var(--line); text-wrap: balance;
+  }
+  h2:first-child { margin-top: 1rem; border-top: none; padding-top: 0; }
+  h2 .kicker { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); font-weight: 700; margin-bottom: .3rem; }
+  h3 { font-size: 1.08rem; margin: 2rem 0 .5rem; }
+  h4 { font-size: .95rem; margin: 1.5rem 0 .4rem; }
+  p, li { max-width: 76ch; }
+  a { color: var(--accent); }
+  code { background: var(--code-bg); border-radius: 4px; padding: .1em .35em; font-size: .86em; }
+  .lead { font-size: 1.02rem; color: var(--muted); }
+  .diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; overflow-x: auto; margin: 1.2rem 0; }
+  .diagram .caption { font-size: .8rem; color: var(--muted); margin-top: .5rem; text-align: center; }
+  pre.mermaid { background: none; margin: 0; display: flex; justify-content: center; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; margin: 1rem 0; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin: 1.2rem 0; }
+  .tablewrap table { margin: 0; }
+  th { text-align: left; font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 2px solid var(--line); padding: .6rem .8rem; white-space: nowrap; }
+  td { border-bottom: 1px solid var(--line); padding: .55rem .8rem; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fmt { font-size: .82rem; background: var(--code-bg); border-radius: 4px; padding: .1em .35em; }
+  .pill { display: inline-block; border-radius: 99px; padding: .12rem .6rem; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+  .pill.good { color: var(--good); background: var(--good-bg); }
+  .pill.warn { color: var(--warn); background: var(--warn-bg); }
+  .pill.bad { color: var(--bad); background: var(--bad-bg); }
+  .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--surface); border-radius: 8px; padding: .9rem 1.1rem; margin: 1.2rem 0; font-size: .92rem; }
+  .callout.bug { border-left-color: var(--bad); }
+  .callout.bug .tag { color: var(--bad); }
+  .callout .tag { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--accent); display: block; margin-bottom: .3rem; }
+  .formula { background: var(--code-bg); border-radius: 8px; padding: .8rem 1.1rem; margin: .8rem 0; font-size: .88rem; overflow-x: auto; white-space: pre; line-height: 1.7; }
+  .bits { display: flex; margin: 1rem 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); font-size: .8rem; text-align: center; max-width: 560px; }
+  .bits > div { padding: .5rem .4rem; border-right: 1px solid var(--line); background: var(--surface); }
+  .bits > div:last-child { border-right: none; }
+  .bits .lbl { font-weight: 700; }
+  .bits .rng { color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+  .b9 { flex: 9; } .b14 { flex: 14; }
+  .bits > div:nth-child(1) { background: var(--accent-soft); }
+  .bits > div:nth-child(2) { background: var(--good-bg); }
+  .bits > div:nth-child(3) { background: var(--warn-bg); }
+  ul.refs { font-size: .84rem; color: var(--muted); }
+  ul.refs li { margin-bottom: .3rem; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1.2rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem; }
+  .card h4 { margin: 0 0 .4rem; }
+  .card .meta { font-size: .76rem; color: var(--muted); margin-bottom: .5rem; }
+  .card p { font-size: .88rem; margin: .4rem 0; }
+  footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; padding: 1.5rem; text-align: center; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-behavior: smooth; }
+</style>
+
+<header class="hero">
+  <div class="hero-inner">
+    <h1><code>audiotwin</code> — comment ça marche, de bout en bout</h1>
+    <p class="sub">Documentation technique complète du toolkit de détection de relations audio :
+    fonctionnalités, formats de données à chaque étape, justification des choix d'implémentation,
+    efficacité mesurée et estimée de chaque processus, et techniques modernes de la littérature
+    scientifique pour dépasser les limites actuelles.</p>
+    <div class="stats">
+      <span class="stat">version <b>0.2.0</b></span>
+      <span class="stat"><b>8</b> types de relations détectées</span>
+      <span class="stat"><b>84</b> tests verts</span>
+      <span class="stat">cœur : <b>numpy seul</b> + fpcalc/ffmpeg</span>
+      <span class="stat">extras : <b>[landmark]</b> scipy · <b>[cover]</b> librosa</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sommaire">
+  <div class="toc-title">Sommaire</div>
+  <a href="#vue"><b>0.</b> Vue d'ensemble</a>
+  <a href="#duplicate"><b>1.</b> DUPLICATE — hash + Chromaprint</a>
+  <a href="#remaster"><b>2.</b> REMASTER — relecture de seuils</a>
+  <a href="#edit"><b>3.</b> EDIT — géométrie RANSAC</a>
+  <a href="#landmark"><b>4.</b> SAMPLE/MASHUP — landmarks</a>
+  <a href="#cover"><b>5.</b> COVER — chroma + OTI + DTW</a>
+  <a href="#instrumental"><b>6.</b> INSTRUMENTAL &amp; agrégation</a>
+  <a href="#efficacite"><b>7.</b> Tableau d'efficacité</a>
+  <a href="#modernes"><b>8.</b> Techniques modernes</a>
+  <a href="#formules"><b>9.</b> Formules de référence</a>
+</nav>
+
+<main>
+
+<h2 id="vue"><span class="kicker">Document 0</span>Vue d'ensemble — l'architecture</h2>
+
+<p class="lead">audiotwin répond à une seule question, déclinée en huit nuances : <em>quelle relation
+existe entre deux fichiers audio ?</em> Il ne prend <strong>aucune décision métier</strong> — il retourne
+des scores, des indices et des timestamps ; c'est à l'appelant de décider quoi en faire.</p>
+
+<p>Le principe directeur de toute l'architecture : <strong>du moins cher au plus cher, avec
+court-circuit</strong>. Un hash de fichier coûte 1,5&nbsp;ms ; une empreinte Chromaprint, 60&nbsp;ms ;
+une analyse chroma+DTW, plusieurs secondes. On ne paie l'étape suivante que si la précédente
+n'a pas suffi. Second principe : <strong>le cœur reste léger</strong> (numpy uniquement) — tout ce
+qui est lourd (scipy, librosa) est isolé derrière des extras optionnels avec imports paresseux,
+et tout ce qui serait très lourd (réseaux de neurones) est <em>délégué à l'appelant</em> sous
+forme de scores injectés (le « NFP score »).</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph IN["Entrées"]
+    A["Fichier audio A"]
+    B["Fichier audio B"]
+    MP["Points de correspondance<br/>externes (t_query, t_ref, score)"]
+    EXT["Scores externes<br/>NFP · couverture vocale"]
+  end
+  subgraph CORE["core.py — cœur (numpy seul)"]
+    H["file_hash — SHA-256"]
+    FP["compute_fingerprint — fpcalc"]
+    CMP["compare_fingerprints — XOR bit à bit"]
+    REL["classify_relation"]
+    ED["classify_edit — RANSAC"]
+    INS["classify_instrumental_pair"]
+    AGG["suggest_relation"]
+  end
+  subgraph LMK["landmark.py — extra scipy"]
+    XL["extract_landmarks — Wang 2003"]
+    IDX["LandmarkIndex — SQLite"]
+    SMP["classify_sample"]
+    MSH["classify_mashup"]
+  end
+  subgraph COV["cover.py — extra librosa"]
+    CHR["compute_chroma"]
+    OTI["optimal_transposition"]
+    DTW["DTW cosinus"]
+  end
+  A --> H --> AGG
+  A --> FP --> CMP --> REL --> AGG
+  MP --> ED --> AGG
+  A --> XL --> IDX --> SMP --> AGG
+  IDX --> MSH --> AGG
+  IDX -. "match_points" .-> ED
+  A --> CHR --> OTI --> DTW --> AGG
+  DTW -. "similarité contenu" .-> INS
+  EXT --> REL
+  EXT --> INS --> AGG
+  AGG --> OUT["Hypothèses ordonnées<br/>DUPLICATE › REMASTER › MASHUP ›<br/>SAMPLE › EDIT › INSTRUMENTAL › COVER"]
+</pre>
+<div class="caption">Architecture globale : trois familles de signaux convergent vers l'agrégateur. Les flèches pointillées sont des ponts inter-modules (les <code>match_points</code> du landmark alimentent directement classify_edit).</div>
+</div>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Relation</th><th>Signification</th><th>Signal exploité</th><th>Module</th><th>Dépendance</th></tr></thead>
+<tbody>
+<tr><td><b>DUPLICATE</b></td><td>Même master, encodage différent</td><td>Hash exact, puis similarité bit à bit d'empreintes spectrales</td><td><code>detect()</code></td><td>cœur + fpcalc</td></tr>
+<tr><td><b>REMASTER</b></td><td>Même enregistrement, signal retravaillé (EQ, dynamique)</td><td>Divergence Chromaprint↓ / NFP↑ — même structure, texture différente</td><td><code>classify_relation()</code></td><td>cœur</td></tr>
+<tr><td><b>EDIT</b></td><td>Même enregistrement, timeline modifiée (coupe, extension, vitesse)</td><td>Géométrie des points de correspondance (pente, couverture)</td><td><code>classify_edit()</code></td><td>cœur</td></tr>
+<tr><td><b>SAMPLE</b></td><td>Fragment réutilisé dans un autre morceau</td><td>Pics spectraux alignés, localisés dans le temps</td><td><code>landmark</code></td><td>[landmark]</td></tr>
+<tr><td><b>MASHUP</b></td><td>Fragments de plusieurs morceaux combinés</td><td>Matches forts sur ≥2 sources, régions disjointes</td><td><code>landmark</code></td><td>[landmark]</td></tr>
+<tr><td><b>COVER</b></td><td>Même composition, nouvelle interprétation</td><td>Progression harmonique (chroma), invariante au timbre/tempo/tonalité</td><td><code>cover</code></td><td>[cover]</td></tr>
+<tr><td><b>INSTRUMENTAL</b></td><td>Même contenu, voix présente vs absente</td><td>Asymétrie de couverture vocale (mesurée par outil externe)</td><td><code>classify_instrumental_pair()</code></td><td>cœur</td></tr>
+<tr><td><b>NO_RELATION</b></td><td>Aucun lien détectable</td><td>Aucun signal au-dessus de son seuil</td><td>tous</td><td>—</td></tr>
+</tbody>
+</table></div>
+
+<div class="callout">
+<span class="tag">Pourquoi cette architecture en modules à extras ?</span>
+Mesure faite pendant le développement : ajouter scikit-learn (pour un simple ajustement de droite)
+aurait tiré <b>~46&nbsp;Mo</b> de wheels (scipy 37&nbsp;Mo + sklearn 8&nbsp;Mo). Le RANSAC a donc été
+écrit à la main en ~40 lignes de numpy. Même logique partout : scipy n'arrive qu'avec
+<code>[landmark]</code>, librosa qu'avec <code>[cover]</code>, et une job CI dédiée
+(« core-only ») casse le build si l'une des deux fuit dans l'installation de base.
+</div>
+
+<h2 id="duplicate"><span class="kicker">Document 1</span>DUPLICATE — le pipeline hash + Chromaprint</h2>
+
+<p class="lead">Trois niveaux, du moins cher au plus cher, avec court-circuit à chaque étage.
+C'est le pipeline historique du projet et le plus utilisé.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  S(["detect(path_a, path_b)"]) --> H["Niveau 0 — SHA-256 des octets bruts<br/>1,5 ms / fichier de 20 s"]
+  H --> Q1{"hash_a == hash_b ?"}
+  Q1 -- "oui" --> R1(["DUPLICATE · confiance = 1.0<br/>Chromaprint jamais calculé"])
+  Q1 -- "non" --> FP["Niveau 1 — fpcalc -raw sur chaque fichier<br/>~60 ms / fichier de 20 s"]
+  FP --> CMP["compare_fingerprints<br/>XOR + popcount sur mots uint32"]
+  CMP --> Q2{"score ≥ 0.85 ?"}
+  Q2 -- "non" --> R2(["PAS duplicata · confiance = 0.0"])
+  Q2 -- "oui" --> Q3{"score NFP fourni<br/>par l'appelant ?"}
+  Q3 -- "non" --> R3(["DUPLICATE · confiance = score × 0.9<br/>pénalité : pas de 2e confirmation"])
+  Q3 -- "oui, ≥ 0.90" --> R4(["DUPLICATE · confiance = moyenne des 2 scores"])
+  Q3 -- "oui, &lt; 0.90" --> R5(["PAS duplicata · confiance = 0.0<br/>garde anti-faux-positif"])
+</pre>
+<div class="caption">Logique de décision de <code>detect()</code> / <code>combine_scores()</code>. Les temps sont mesurés (benchmarks/results.md).</div>
+</div>
+
+<h3>Les formats de données, étape par étape</h3>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Étape</th><th>Format</th><th>Type / plage</th><th>Exemple</th></tr></thead>
+<tbody>
+<tr><td>Fichier d'entrée</td><td>N'importe quel format que le décodeur ffmpeg embarqué de fpcalc sait lire</td><td>mp3, flac, wav, ogg, m4a…</td><td class="fmt">track.mp3</td></tr>
+<tr><td>Hash niveau 0</td><td>Digest SHA-256 hexadécimal, streaming par blocs de 1&nbsp;Mio (mémoire constante)</td><td>str · 64 caractères hex</td><td class="fmt">3f4a…c92e</td></tr>
+<tr><td>Sortie fpcalc <code>-raw</code></td><td>Texte : lignes <code>DURATION=</code> et <code>FINGERPRINT=</code> (entiers décimaux séparés par virgules)</td><td>uint32 non signés · 0 à 4 294 967 295 · ~8 mots/s d'audio</td><td class="fmt">DURATION=20<br/>FINGERPRINT=3309433691,…</td></tr>
+<tr><td>Tableau interne</td><td>Un mot 32 bits par trame d'analyse, ordre temporel</td><td class="fmt">np.ndarray dtype=uint32</td><td class="fmt">[3309433691, 3309433723, …]</td></tr>
+<tr><td>Empreinte sérialisée</td><td>Octets natifs (little-endian) du tableau, encodés base64 — format propre à audiotwin, ≠ format compressé AcoustID</td><td>str ASCII · ~4N/3 caractères pour N mots</td><td class="fmt">d/lNIXf5TSF3…</td></tr>
+<tr><td>Score de similarité</td><td>1 − (bits différents / bits totaux) sur le préfixe commun</td><td>float · 0.0 – 1.0</td><td class="fmt">0.97</td></tr>
+<tr><td>Verdict final</td><td>dict : track_a/b, file_hash_match, chromaprint_score, nfp_*, is_duplicate, confidence</td><td>JSON-sérialisable</td><td class="fmt">{"is_duplicate": true, …}</td></tr>
+</tbody>
+</table></div>
+
+<h3>Ce qui se passe <em>dans</em> fpcalc (Chromaprint)</h3>
+<p>audiotwin délègue le calcul d'empreinte au binaire <code>fpcalc</code>, mais il est utile de savoir
+ce qu'il fait : il décode l'audio puis le ré-échantillonne en interne à <b>11 025 Hz mono</b>, calcule
+une STFT (trames de 4096 échantillons, 2/3 de recouvrement), replie le spectre en une « image »
+chroma à 12 bandes, puis fait glisser <b>16 filtres 2D</b> prédéfinis sur cette image ; chaque
+sortie de filtre est quantifiée sur 2 bits avec un code de Gray → un mot de 32 bits par position
+(<a href="https://oxygene.sk/2011/01/how-does-chromaprint-work/">Lalinský 2011</a>, d'après Ke et al. 2005).
+Le repli en chroma donne une bonne tolérance à l'EQ et au ré-encodage — mais un pitch-shift fait
+tourner les bandes chroma et un changement de tempo décale les trames : les deux cassent l'empreinte
+(voir Document 8).</p>
+
+<h3>Pourquoi ces choix ?</h3>
+<ul>
+<li><b>Pourquoi un sous-processus fpcalc plutôt que le binding Python <code>chromaprint</code> ?</b>
+Le binding ctypes exige la bibliothèque partagée <code>libchromaprint</code>… qu'upstream ne
+distribue <em>plus</em> pour Windows (seul l'exécutable statique existe). Le mode <code>-raw</code>
+imprime en plus l'empreinte <em>non compressée</em>, ce qui élimine tout besoin de décompression
+côté Python. Résultat : une seule dépendance système, portable partout.</li>
+<li><b>Pourquoi 120 s d'audio par défaut ?</b> Même valeur qu'AcoustID : suffisant pour identifier
+un master, et plafonne le coût de décodage.</li>
+<li><b>Pourquoi un minimum de 10 s ?</b> En dessous, trop peu de mots d'empreinte pour une
+comparaison bit à bit fiable → <code>AudioTooShortError</code> explicite plutôt qu'un score
+trompeur.</li>
+<li><b>Pourquoi la garde anti-faux-positif (NFP &lt; 0.90 → rejet) ?</b> Chromaprint peut être
+trompé par deux morceaux distincts très similaires spectralement. Quand un signal neuronal de
+meilleure qualité contredit un match Chromaprint fort, on préfère un faux négatif à un faux positif
+— dans un pipeline de déduplication, fusionner deux morceaux différents est bien plus grave que
+rater un doublon.</li>
+</ul>
+
+<div class="callout bug">
+<span class="tag">Leçon de production nº1 — l'overflow int32</span>
+Les mots Chromaprint sont des entiers <b>non signés</b> 32 bits. Le code les parsait initialement en
+<code>np.int32</code> signé (max ≈ 2,1 milliards) → <code>OverflowError</code> dès qu'un mot dépassait
+2³¹−1. Sur de l'audio spectralement riche (c.-à-d. de la vraie musique), c'est systématique :
+la fixture de test riche produit <b>221 mots sur 221</b> au-dessus de la limite. Les tests d'origine
+(sinusoïdes pures) produisaient par hasard des petits mots — la CI n'a jamais exercé la plage haute.
+Correctif : <code>uint32</code> de bout en bout + accumulation popcount en int64 + fixtures riches
+auto-validantes (le test échoue si la fixture cesse de produire des grands mots).
+</div>
+
+<h2 id="remaster"><span class="kicker">Document 2</span>REMASTER — une relecture de seuils, zéro calcul nouveau</h2>
+
+<p class="lead">Un remaster = même performance, signal retravaillé. L'intuition clé :
+<b>le NFP (structurel) reste haut pendant que Chromaprint (texture spectrale fine) chute</b>.
+<code>classify_relation()</code> ne calcule rien de nouveau — il relit les deux scores déjà
+disponibles à travers une grille plus fine.</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>chromaprint_score</th><th>nfp_score</th><th>relation_type</th><th>confiance</th></tr></thead>
+<tbody>
+<tr><td class="fmt">≥ 0.85</td><td>quelconque</td><td><b>DUPLICATE</b></td><td>logique de combine_scores (réutilisée, pas dupliquée)</td></tr>
+<tr><td class="fmt">0.60 ≤ s &lt; 0.85</td><td class="fmt">≥ 0.90</td><td><b>REMASTER</b></td><td class="fmt">nfp_score × 0.9</td></tr>
+<tr><td class="fmt">0.60 ≤ s &lt; 0.85</td><td class="fmt">&lt; 0.90 ou absent</td><td><b>NO_RELATION</b></td><td class="fmt">0.0</td></tr>
+<tr><td class="fmt">&lt; 0.60</td><td>quelconque, même 0.99</td><td><b>NO_RELATION</b></td><td class="fmt">0.0</td></tr>
+</tbody>
+</table></div>
+
+<ul>
+<li><b>Pourquoi la pénalité ×0.9 sur la confiance REMASTER ?</b> Cette classification est
+intrinsèquement plus incertaine que DUPLICATE : l'écart Chromaprint/NFP peut aussi venir d'un
+faux positif Chromaprint sur un morceau très répétitif.</li>
+<li><b>Pourquoi un plancher à 0.60 même si le NFP est très fort ?</b> En dessous, le lien
+spectral est jugé trop ténu pour être fiable — on refuse de classifier sur la seule foi du
+signal structurel. Choix documenté et testé explicitement.</li>
+<li><b>Sans NFP, pas de REMASTER possible</b> : le repo ne peut distinguer REMASTER d'une simple
+coïncidence spectrale. C'est une limite assumée et documentée du README.</li>
+<li>Le champ <code>score_gap = nfp_score − chromaprint_score</code> est retourné : c'est
+<em>la</em> signature du remaster (grand écart positif), affichée en priorité par la CLI.</li>
+</ul>
+
+<h2 id="edit"><span class="kicker">Document 3</span>EDIT — la géométrie des points de correspondance (RANSAC)</h2>
+
+<p class="lead">Radio edit (coupe), version extended (ajout), sped-up/nightcore (vitesse) :
+la <em>structure temporelle</em> a changé. Ce détecteur ne décode <b>aucun audio</b> — il raisonne
+géométriquement sur des points de correspondance produits en amont (par le module landmark
+ou tout système externe).</p>
+
+<p>Chaque point <span class="fmt">(t_query, t_ref, score)</span> dit : « la seconde <i>t_query</i>
+du morceau interrogé correspond à la seconde <i>t_ref</i> de la référence ». Si les deux morceaux
+partagent l'enregistrement, ces points s'alignent sur une droite :</p>
+
+<div class="formula">t_ref = pente × t_query + ordonnée
+
+pente = 1.0   → même vitesse          pente = 1.25 → query accéléré de 25 % (nightcore)
+pente = 0.8   → query ralenti de 20 %  ordonnée    → décalage temporel (où commence l'extrait)</div>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  IN["matches : liste de (t_query, t_ref, score)"] --> G{"len ≥ min_inliers (6) ?"}
+  G -- "non" --> F(["no_relation — RANSAC jamais lancé"])
+  G -- "oui" --> R["RANSAC 1000 itérations :<br/>tirer 2 points → pente/ordonnée →<br/>compter les inliers (résidu ≤ 0.5 s)"]
+  R --> LS["Raffinage moindres carrés<br/>sur le consensus"]
+  LS --> Q1{"pente dans [0.5, 2.0]<br/>et inliers ≥ 6 ?"}
+  Q1 -- "non" --> F
+  Q1 -- "oui" --> COV["compute_coverage :<br/>étendue des inliers / durée de chaque piste"]
+  COV --> Q2{"|pente − 1| &gt; 0.03 ?"}
+  Q2 -- "oui" --> S(["speed_change"])
+  Q2 -- "non" --> Q3{"couverture des 2 côtés ≥ 0.90 ?"}
+  Q3 -- "non" --> T(["trim_or_extend"])
+  Q3 -- "oui" --> FM(["full_match — structure intacte,<br/>à corréler avec classify_relation"])
+</pre>
+<div class="caption">Pipeline <code>classify_edit()</code> = <code>fit_temporal_alignment()</code> (RANSAC) + <code>compute_coverage()</code> + grille de décision.</div>
+</div>
+
+<h3>Pourquoi RANSAC et pas des moindres carrés directs ?</h3>
+<p>Les points de correspondance amont contiennent des <b>faux matches</b> (collisions de hash,
+coïncidences). Un ajustement moindres carrés est arbitrairement corrompu par un seul outlier
+aberrant ; RANSAC trouve la droite du <em>consensus majoritaire</em> et rejette le bruit.
+La formule classique (Fischler &amp; Bolles 1981) justifie les 1000 itérations par un très large
+excès de sécurité :</p>
+
+<div class="formula">k = log(1 − p) / log(1 − w²)     p = proba de succès voulue, w = taux d'inliers
+
+exemple : p = 0.99, w = 0.5 (50 % de bruit !) → k ≈ 17 itérations suffisent
+audiotwin en fait 1000 → marge ~60× même à fort taux de bruit, pour un coût &lt; 1 ms</div>
+
+<ul>
+<li><b>Pourquoi la formule de confiance <span class="fmt">min(1, ratio_inliers × inliers/6)</span> ?</b>
+Elle combine la <em>proportion</em> d'inliers ET leur <em>nombre absolu</em> : 6 inliers sur 6 points,
+c'est un ratio parfait mais peu de preuve ; 20 inliers sur 25, c'est un ratio imparfait mais beaucoup
+plus de preuve. La formule favorise le second cas — testé explicitement.</li>
+<li><b>Pourquoi des bornes de pente [0.5, 2.0] ?</b> Au-delà de ×2 ou en dessous de ×0.5, ce n'est
+plus un « edit » plausible du même enregistrement.</li>
+<li><b><code>full_match</code> n'est pas un edit</b> : structure temporelle intacte = territoire
+DUPLICATE/REMASTER. Le docstring et le README demandent de corréler avec <code>classify_relation()</code>.</li>
+</ul>
+
+<h2 id="landmark"><span class="kicker">Document 4</span>SAMPLE / MASHUP — l'empreinte par pics spectraux (Wang 2003)</h2>
+
+<p class="lead">L'algorithme de Shazam : réduire l'audio à une « constellation » de pics spectraux,
+apparier les pics en hashes, et prouver un match par la <em>cohérence temporelle</em> des
+correspondances. Robuste au bruit et au mixage additif, et — contrairement à Chromaprint — il
+retourne la <b>position exacte</b> de chaque correspondance, ce qui permet SAMPLE et MASHUP.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["Fichier audio"] --> D["decode_audio<br/>ffmpeg → PCM float32<br/>mono 11 025 Hz, en mémoire"]
+  D --> S["STFT scipy<br/>n_fft 512, hop 256<br/>→ magnitude (257 × T)"]
+  S --> P["Pics : suppression non-maximale<br/>maximum_filter 30×30<br/>+ top-K global (25 pics/s)"]
+  P --> PAIR["Appariement : chaque pic ancre<br/>+ 5 pics suivants dans la zone cible<br/>Δt ∈ [0.5, 3.0] s, Δf ∈ [−32, +32] bins"]
+  PAIR --> HASH["Hash 32 bits par paire<br/>+ t_ancre en secondes"]
+  HASH --> DB[("SQLite<br/>landmarks(hash, track_id, t_anchor)<br/>index sur hash")]
+</pre>
+<div class="caption">Pipeline d'indexation <code>extract_landmarks()</code> → <code>LandmarkIndex.add_track()</code>. Un morceau de 3 min produit ~4 500 landmarks en moins de 5 s (test de perf).</div>
+</div>
+
+<h3>Le layout du hash — 32 bits exactement</h3>
+<div class="bits">
+  <div class="b9"><div class="lbl">freq. ancre</div><div class="rng">bits 23–31 · 9 bits</div></div>
+  <div class="b9"><div class="lbl">freq. cible</div><div class="rng">bits 14–22 · 9 bits</div></div>
+  <div class="b14"><div class="lbl">Δt en trames</div><div class="rng">bits 0–13 · 14 bits</div></div>
+</div>
+<p>9 bits suffisent pour les 257 bins de fréquence (n_fft 512), et 14 bits de Δt couvrent
+bien plus que la zone cible de 3 s. Un hash encode donc la <em>forme géométrique locale</em>
+d'une paire de pics — assez spécifique pour qu'une collision fortuite soit rare, assez grossier
+pour survivre au ré-encodage.</p>
+
+<h3>La requête : l'histogramme d'offsets, ou comment prouver un match</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  Q["Fichier requête"] --> XQ["extract_landmarks<br/>(même pipeline)"]
+  XQ --> LK["Lookup SQLite<br/>par lots de 500 hashes"]
+  LK --> HG["Par piste candidate :<br/>histogramme des (t_ref − t_query)<br/>bacs de 0.2 s"]
+  HG --> PK{"pic d'histogramme<br/>≥ 10 hashes alignés ?"}
+  PK -- "oui" --> M["Match : offset, score,<br/>match_points (t_query, t_ref, 1.0)"]
+  PK -- "non" --> N["Pas de match"]
+  M --> CS["classify_sample :<br/>couverture ≤ 35 % de la query ?<br/>→ fragment localisé + bornes"]
+  M --> CMH["classify_mashup :<br/>≥ 2 sources distinctes,<br/>régions disjointes (&lt; 30 % de chevauchement)"]
+</pre>
+<div class="caption">Pipeline de requête. Le pont vers Document 3 : les <code>match_points</code> retournés sont au format exact attendu par <code>classify_edit()</code>.</div>
+</div>
+
+<p><b>Pourquoi l'histogramme d'offsets prouve-t-il un match ?</b> Des collisions de hash isolées
+donnent des offsets <span class="fmt">t_ref − t_query</span> dispersés au hasard. Mais si la requête
+contient réellement un extrait de la référence, <em>tous</em> les hashes de cet extrait partagent
+le <em>même</em> offset (le décalage entre les deux timelines) → un pic massif dans l'histogramme.
+C'est le test de cohérence temporelle de Wang 2003 : on n'exige pas que les hashes matchent,
+on exige qu'ils matchent <em>de façon temporellement cohérente</em>.</p>
+
+<h3>Choix d'implémentation et leurs raisons</h3>
+<ul>
+<li><b>11 025 Hz</b> : le contenu au-dessus de ~5 kHz est inutile pour des pics robustes, et
+diviser le débit par 4 divise le coût STFT d'autant. (Chromaprint utilise le même taux en interne.)</li>
+<li><b>Suppression non-maximale + top-K global</b> plutôt qu'un seuil fixe : la densité de pics
+visée (25/s) est atteinte quel que soit le niveau du signal — un seuil fixe serait trop dense sur
+de la musique forte, vide sur de la musique douce.</li>
+<li><b>SQLite</b> : dans la stdlib (zéro dépendance), transactions, index B-tree sur le hash,
+<code>":memory:"</code> pour les tests. Insertions par lots (<code>executemany</code>).</li>
+<li><b>Saturation de la confiance à 50 hashes</b> : 50 hashes alignés est déjà une preuve
+écrasante ; au-delà, plus de hashes ne devraient pas gonfler la confiance.</li>
+<li><b>SAMPLE = match localisé</b> : si les inliers couvrent ≤ 35 % de la query, c'est un fragment
+(sample) ; au-delà, c'est une relation globale (duplicate/edit/remix) et ce n'est pas le rôle de
+<code>classify_sample</code> de la nommer.</li>
+<li><b>MASHUP = acceptation gloutonne</b> : sources triées par preuve décroissante, une région
+n'est acceptée que si elle chevauche &lt; 30 % des régions déjà acceptées → un mashup est bien
+« plusieurs sources sur des <em>segments différents</em> de la query ».</li>
+<li><b>Biais connu des bornes</b> : les ancres de fin de fragment ne peuvent pas s'apparier
+(leurs cibles tomberaient hors du fragment) → la borne de fin détectée est en avance d'au plus
+Δt_max = 3 s. Documenté dans les tests plutôt que masqué.</li>
+</ul>
+
+<h2 id="cover"><span class="kicker">Document 5</span>COVER — chroma, transposition optimale et DTW (Serrà 2009)</h2>
+
+<p class="lead">Une reprise change <em>tout</em> ce que les empreintes exactes mesurent : timbre,
+tempo, tonalité, interprète. Ce qui survit, c'est la <b>progression harmonique</b>. Le pipeline
+la capture avec trois invariances successives : chroma (⊘ timbre), OTI (⊘ tonalité), DTW (⊘ tempo).</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["Audio A"] --> DA["decode 22 050 Hz"]
+  B["Audio B"] --> DB["decode 22 050 Hz"]
+  DA --> HA["HPSS : garder<br/>la composante harmonique<br/>(optionnel)"]
+  DB --> HB["HPSS"]
+  HA --> CA["Chroma CQT<br/>(12 × T) → agrégé à 2 img/s<br/>→ normalisé L2 par colonne"]
+  HB --> CB["Chroma CQT"]
+  CA --> O["OTI : tester les 12 rotations<br/>du profil moyen de B contre A<br/>→ k = transposition en demi-tons"]
+  CB --> O
+  O --> RL["np.roll(chroma_b, −k)"]
+  RL --> W["DTW distance cosinus<br/>bande de Sakoe-Chiba (25 %)"]
+  CA --> W
+  W --> R(["similarité = 1 − coût/longueur_chemin<br/>+ transposition + duration_ratio"])
+</pre>
+<div class="caption">Pipeline <code>cover_similarity()</code>. Une variante <code>cover_similarity_from_chroma()</code> accepte des chroma précalculés (pour les appelants qui cachent leurs features).</div>
+</div>
+
+<h3>Pourquoi chaque invariance fonctionne</h3>
+<ul>
+<li><b>Chroma ⊘ timbre</b> : replier toutes les octaves sur 12 classes de hauteur (do, do♯, …)
+efface l'instrumentation — un accord de do majeur au piano et à la guitare donnent presque le
+même vecteur chroma. Le CQT (plutôt que la STFT) aligne exactement ses bins sur les demi-tons.</li>
+<li><b>OTI ⊘ tonalité</b> : une transposition de k demi-tons est une <em>rotation circulaire</em>
+du vecteur chroma. On teste les 12 rotations du profil moyen et on garde la meilleure —
+la convention d'audiotwin : k = « B sonne k demi-tons au-dessus de A ». Vérifié en test :
+une reprise transposée de +3 est détectée avec exactement k = 3.</li>
+<li><b>DTW ⊘ tempo</b> : le Dynamic Time Warping aligne deux séquences de longueurs différentes
+en autorisant des déformations locales. Une reprise 15 % plus lente s'aligne quand même ; le coût
+du chemin optimal, normalisé par sa longueur, devient le score. La bande de Sakoe-Chiba (25 %)
+interdit les déformations pathologiques et divise le coût de calcul.</li>
+<li><b>HPSS ⊘ batterie</b> : la séparation harmonique/percussive (filtres médians) retire les
+transitoires de batterie qui « salissent » le chroma sur toutes les classes de hauteur à la fois.
+Optionnelle (<code>use_hpss=False</code>) car coûteuse (~2-3× le temps d'extraction).</li>
+</ul>
+
+<div class="callout bug">
+<span class="tag">Leçon de production nº2 — le NaN du silence</span>
+Une colonne chroma silencieuse a une norme ~0 ; après normalisation elle restait un <b>vecteur
+nul</b>, et la distance cosinus d'un vecteur nul vaut 0/0 = <b>NaN</b> → crash
+« DTW cost matrix C has NaN values » sur de l'audio réel. Subtilité découverte en écrivant le
+test : des silences de 3 s ne déclenchent PAS le bug — les fenêtres CQT basses fréquences
+(plusieurs secondes de long) « comblent » les trous courts par fuite spectrale. Il faut ≥ ~30 s
+de silence pour produire de vraies colonnes nulles. Correctif : colonnes quasi nulles → zéro
+propre dans <code>compute_chroma</code>, puis <em>filtrage</em> des trames silencieuses avant le
+DTW (protège aussi les chroma fournis par l'appelant) ; un côté 100 % silencieux retourne un
+résultat fini au lieu de lever.
+</div>
+
+<h2 id="instrumental"><span class="kicker">Document 6</span>INSTRUMENTAL et l'agrégateur <code>suggest_relation</code></h2>
+
+<h3>classify_instrumental_pair — pur calcul sur scores</h3>
+<p>Le pattern instrumental/karaoké : <b>même contenu musical, forte asymétrie de voix</b>.
+audiotwin n'embarque volontairement <em>aucun</em> détecteur vocal (dépendance lourde) : l'appelant
+fournit <span class="fmt">vocal_coverage_a/b ∈ [0,1]</span> mesurés par l'outil de son choix, et
+n'importe quelle mesure [0,1] de « même contenu » convient (similarité cover, score landmark, NFP).</p>
+
+<div class="callout">
+<span class="tag">Le maillon existe : vocalcoverage</span>
+Le projet compagnon <code>vocalcoverage</code> (même dépôt parent <code>mir-utils</code>, MIT) a été
+créé précisément pour produire cette entrée. <code>analyze(mix, stem_vocal)</code> retourne
+<span class="fmt">vocal_coverage ∈ [0,1]</span> + les segments vocaux — branchable tel quel sur
+<code>classify_instrumental_pair</code>. Son pipeline suit la recette validée par la littérature
+(voir Doc 8) : trames de 1 s → exclusion du silence (RMS &lt; −40 dB) → ratio
+<span class="fmt">RMS(vocals)/RMS(mix)</span> → <b>confirmation harmonique</b> par détection de f0
+(librosa.pyin, 80–1000 Hz) → lissage majoritaire → segments. La séparation de sources elle-même
+reste en amont (Demucs, audio-separator…), conformément à la philosophie « dépendances légères »
+des deux projets.
+</div>
+
+<div class="tablewrap"><table>
+<thead><tr><th></th><th>Contenu similaire (≥ 0.70)</th><th>Contenu différent</th></tr></thead>
+<tbody>
+<tr><td><b>Asymétrie vocale nette</b><br/>(un côté ≥ 0.40, l'autre ≤ 0.10)</td><td class="fmt">is_instrumental_pair = True<br/>confiance = similarité × écart_vocal</td><td class="fmt">False (contenu insuffisant)</td></tr>
+<tr><td><b>Pas d'asymétrie</b><br/>(deux vocales, deux instrumentales, ou zone grise)</td><td class="fmt">False (pas le pattern)</td><td class="fmt">False</td></tr>
+</tbody>
+</table></div>
+
+<p>La zone grise entre 0.10 et 0.40 est volontaire : une piste à 0.25 de couverture vocale n'est
+ni clairement vocale ni clairement instrumentale → on refuse de trancher.</p>
+
+<h3>suggest_relation — l'agrégateur (et ses limites assumées)</h3>
+<p>Commodité pour l'utilisateur : passer les résultats <em>disponibles</em> (tous optionnels)
+et recevoir une liste d'hypothèses <b>ordonnée par priorité fixe</b> — pas par confiance :</p>
+
+<div class="formula">DUPLICATE › REMASTER › MASHUP › SAMPLE › EDIT › INSTRUMENTAL › COVER
+
+priorité = spécificité du signal : un hash identique est une preuve quasi certaine ;
+une similarité chroma est l'indice le plus faible. Chaque hypothèse garde la
+confiance de son résultat source, avec une chaîne "evidence" lisible.</div>
+
+<p>Documenté en toutes lettres dans le docstring et le README : <b>c'est une heuristique à base
+de règles, PAS un classifieur entraîné</b>. Un système de production doit entraîner sa propre
+fusion sur ses propres données.</p>
+
+<h2 id="efficacite"><span class="kicker">Document 7</span>Tableau d'efficacité des processus</h2>
+
+<p class="lead">Vitesses <b>mesurées</b> sur cette machine (benchmarks/results.md et tests de perf) ;
+robustesse/précision <b>estimées</b> depuis la littérature (sources en Document 8). La note
+évalue l'adéquation du processus <em>à sa tâche déclarée</em>, pas dans l'absolu.</p>
+
+<div class="callout">
+<span class="tag">Mis à jour pour la v0.3.0</span>
+Les faiblesses actionnables ont été corrigées (93 tests verts) : blanchiment spectral avant le
+peak-picking landmark, fusion des bacs d'offset adjacents, régions mashup par percentiles,
+RANSAC pondéré par les scores + terminaison adaptative de Fischler-Bolles, pré-filtre 2DFTM
+pour les covers, timeouts sur fpcalc/ffmpeg. Une leçon empirique au passage : le blanchiment
+par pic courant (Stowell &amp; Plumbley), recommandé en Doc 8, a été <em>essayé puis rejeté</em> —
+il saturait les bins à 1.0 et détruisait la spécificité (du bruit blanc matchait les pistes
+indexées) ; il est remplacé par une division par l'enveloppe spectrale lissée, qui aplatit la
+pente sans écraser le contraste local. ⚠ Les hashes landmark changent : reconstruire les index
+existants (ou <code>whiten=False</code> des deux côtés).
+</div>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Processus</th><th>Outil / algo</th><th>Vitesse mesurée</th><th>Robustesse / précision estimée</th><th>Note</th><th>Faiblesse principale</th></tr></thead>
+<tbody>
+<tr>
+  <td><b>Hash fichier</b> (niveau 0)</td><td>SHA-256 stdlib, streaming 1 Mio</td>
+  <td class="num">1,5 ms / 20 s</td>
+  <td>Parfaite sur octets identiques ; nulle au-delà (1 octet de tag changé = raté)</td>
+  <td><span class="pill good">excellent</span></td>
+  <td>Ne voit que l'identité exacte — c'est son rôle</td>
+</tr>
+<tr>
+  <td><b>Empreinte Chromaprint</b> (niveau 1)</td><td>fpcalc -raw en sous-processus</td>
+  <td class="num">60 ms / 20 s<br/>detect() complet : 124 ms</td>
+  <td>Excellente sur ré-encodage (score mesuré 1.0 wav→mp3) ; ~60 % de vrais positifs sous bruit rose 3 dB (étude comparative IJCSET 2017) ; échoue sur requête en milieu de piste, pitch-shift, time-stretch</td>
+  <td><span class="pill good">bon</span> <span class="pill warn">pour son périmètre</span></td>
+  <td>Aveugle au pitch/tempo ; alignement depuis le début de piste uniquement</td>
+</tr>
+<tr>
+  <td><b>Comparaison bit à bit</b></td><td>XOR + popcount numpy (uint32)</td>
+  <td class="num">0,11 ms</td>
+  <td>Exacte pour ce qu'elle mesure (taux d'erreur binaire, Haitsma-Kalker 2002) ; un seul point de calibration empirique : deux morceaux différents ont donné 0.72 (sous le seuil 0.85)</td>
+  <td><span class="pill good">excellent</span></td>
+  <td>Le seuil 0.85 est peu étalonné (fixtures synthétiques seulement)</td>
+</tr>
+<tr>
+  <td><b>Grille REMASTER</b></td><td>Relecture de seuils, zéro calcul</td>
+  <td class="num">&lt; 1 µs</td>
+  <td>Entièrement dépendante de la qualité du NFP fourni ; logique elle-même exhaustivement testée</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Inopérante sans score NFP externe</td>
+</tr>
+<tr>
+  <td><b>Ajustement EDIT</b></td><td>RANSAC numpy pondéré par match_score, terminaison adaptative Fischler-Bolles</td>
+  <td class="num">&lt; 1 ms, s'arrête dès la borne théorique atteinte</td>
+  <td>Très robuste aux outliers ; le tirage pondéré départage désormais deux droites candidates en faveur des points les mieux notés (testé)</td>
+  <td><span class="pill good">excellent</span></td>
+  <td>Dépend totalement des points fournis en amont (par nature)</td>
+</tr>
+<tr>
+  <td><b>Extraction landmarks</b></td><td>STFT scipy + blanchiment spectral (enveloppe lissée) + maximum_filter + appariement</td>
+  <td class="num">&lt; 5 s / 3 min d'audio</td>
+  <td>Famille Wang 2003 : robuste au bruit/ré-encodage ; le blanchiment laisse les pics HF et les passages doux concourir équitablement ; s'effondre toujours au-delà de ~3 % de pitch-shift (limite structurelle de la famille)</td>
+  <td><span class="pill warn">moyen</span></td>
+  <td>Pitch/tempo la cassent — la vraie solution reste le hashing par triplets façon Panako (Doc 8), non implémenté ; <code>pitch_shift_range</code> compense par grille ±N demi-tons</td>
+</tr>
+<tr>
+  <td><b>Requête index</b></td><td>SQLite B-tree + histogramme d'offsets à bacs fusionnés</td>
+  <td class="num">&lt; 1 s (petit index)</td>
+  <td>Spécificité excellente (cohérence temporelle exigée) ; un offset à cheval sur une frontière de bac ne divise plus ses votes, et l'offset rapporté est la moyenne réelle des paires (plus précis que le centre du bac)</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Non benchmarké à l'échelle catalogue (10⁵-10⁶ pistes)</td>
+</tr>
+<tr>
+  <td><b>Similarité COVER</b></td><td>chroma CQT + OTI + DTW bandé, précédé du pré-filtre 2DFTM (<code>cover_embedding</code>)</td>
+  <td class="num">~2-8 s / paire en exact ;<br/>pré-filtre : O(1) / paire</td>
+  <td>Méthode classique : MAP ≈ 0.33-0.45 sur Da-TACOS, ≈ 0.54 sur covers80 — vs 0.8+ pour le neuronal ; le pré-filtre 2DFTM (invariant transposition/décalage, vérifié exactement en test) rend le tri de candidats indexable, le DTW exact ne tourne que sur le top-K</td>
+  <td><span class="pill warn">moyen</span></td>
+  <td>Plafond de MAP intrinsèque à la famille classique — le dépasser exige du neuronal (crema-PCP, CoverHunter — Doc 8)</td>
+</tr>
+<tr>
+  <td><b>Pattern INSTRUMENTAL</b></td><td>Arithmétique de seuils</td>
+  <td class="num">&lt; 1 µs</td>
+  <td>Correcte si les couvertures vocales fournies sont bonnes — aucun détecteur embarqué</td>
+  <td><span class="pill good">couvert</span></td>
+  <td>Entrée fournie par le projet compagnon <b>vocalcoverage</b> (ligne suivante) ; seule la séparation de sources reste en amont (Demucs)</td>
+</tr>
+<tr>
+  <td><b>Couverture vocale</b> (compagnon vocalcoverage)</td><td>Ratio RMS vocals/mix + confirmation f0 pyin (p75) + lissage majoritaire, timeout ffmpeg 600 s</td>
+  <td class="num">16,4 s / 60 s d'audio<br/>(~3,7× temps réel, dominé par pyin)</td>
+  <td>Exact sur fixture synthétique (coverage 0.67 attendu = 0.67 mesuré) ; double garde ratio + f0 contre les fuites d'instruments lead ; seuils recalibrés sur voix réelle (a cappella)</td>
+  <td><span class="pill good">bon</span></td>
+  <td>pyin trame par trame est le poste de coût (~50 s pour 3 min) ; voix très transformées (vocodeur, pitch extrême) hors plage f0 par défaut</td>
+</tr>
+<tr>
+  <td><b>Agrégateur</b></td><td>Règles de priorité fixes</td>
+  <td class="num">&lt; 1 µs</td>
+  <td>Heuristique honnêtement documentée comme telle</td>
+  <td><span class="pill warn">heuristique</span></td>
+  <td>Pas de fusion apprise ; les confidences des différents modules ne sont pas calibrées entre elles</td>
+</tr>
+<tr>
+  <td><b>Décodage audio</b></td><td>ffmpeg → PCM en mémoire (pipe), timeout filet de 600 s</td>
+  <td class="num">≈ temps réel ÷ grand facteur</td>
+  <td>Fiable sur tout format ffmpeg ; zéro fichier temporaire ; un décodeur bloqué échoue bruyamment au lieu de pendre indéfiniment (idem fpcalc)</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Un spawn de processus par appel</td>
+</tr>
+</tbody>
+</table></div>
+
+<h3>Efficacité par taxonomie — les deux projets réunis</h3>
+
+<p>La vue qui compte pour l'utilisateur final : pour chaque <em>relation</em> détectable, la chaîne
+complète (audiotwin + vocalcoverage), sa vitesse mesurée de bout en bout, et ce qui la limite.
+La chaîne INSTRUMENTAL a été mesurée réellement de bout en bout : verdict correct
+(paire détectée, voix côté A, confiance 0.64) en <b>31,6 s pour 2 × 60 s d'audio</b>
+(cover_similarity 9,9 s + vocalcoverage ×2 21,6 s + classification 0,01 ms).</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Taxonomie</th><th>Chaîne complète</th><th>Vitesse bout en bout</th><th>Qualité attendue</th><th>Note</th><th>Facteur limitant</th></tr></thead>
+<tbody>
+<tr>
+  <td><b>DUPLICATE</b></td><td>hash → fpcalc → comparaison bits (± NFP externe)</td>
+  <td class="num">3 ms (hash) à 124 ms / paire</td>
+  <td>Quasi parfaite sur ré-encodages (1.0 mesuré) ; ~98 % de précision sans NFP, ~99,5 % avec</td>
+  <td><span class="pill good">très bon</span></td>
+  <td>Requête en milieu de piste, pitch, tempo</td>
+</tr>
+<tr>
+  <td><b>REMASTER</b></td><td>Mêmes scores + grille de seuils</td>
+  <td class="num">+ &lt; 1 µs</td>
+  <td>Entièrement conditionnée au NFP fourni — sans lui, indétectable par construction</td>
+  <td><span class="pill warn">conditionnel</span></td>
+  <td>Le NFP reste à brancher (aucun n'est embarqué)</td>
+</tr>
+<tr>
+  <td><b>EDIT</b></td><td>match_points (landmark interne ou matcher externe) → RANSAC pondéré</td>
+  <td class="num">~1-2 s (points via landmark) + &lt; 1 ms</td>
+  <td>Pente/bornes exactes sur points propres (±0.02 testé) ; trim/extend fiable</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Un speed_change &gt; ~3 % casse les points landmark eux-mêmes — il faut alors un matcher amont robuste (NFP)</td>
+</tr>
+<tr>
+  <td><b>SAMPLE</b></td><td>LandmarkIndex (blanchi) → histogramme fusionné → classify_sample</td>
+  <td class="num">~1-2 s / requête (petit index)</td>
+  <td>Spécificité excellente (bruit blanc : zéro match, testé) ; offset à ±0.2 s ; bornes biaisées ≤ 3 s</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Samples re-pitchés ou noyés sous overdub (limite Wang 2003 ; grille ±N demi-tons en palliatif)</td>
+</tr>
+<tr>
+  <td><b>MASHUP</b></td><td>Idem + classify_mashup (régions percentiles)</td>
+  <td class="num">idem</td>
+  <td>3 sources / régions exactes retrouvées sur fixture (testé) ; robuste aux collisions parasites</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Hérite des limites de SAMPLE ; sources très courtes (&lt; ~5 s) sous le plancher de preuve</td>
+</tr>
+<tr>
+  <td><b>COVER</b></td><td>2DFTM (pré-filtre O(1)) → chroma + OTI + DTW</td>
+  <td class="num">9,9 s / paire de 60 s (mesuré, avec HPSS)</td>
+  <td>Transposition retrouvée exactement (+3 → 3, testé) ; famille classique : MAP ~0.33-0.54 en classement de catalogue</td>
+  <td><span class="pill warn">moyen</span></td>
+  <td>Plafond de la famille classique — au-delà : neuronal (Doc 8)</td>
+</tr>
+<tr>
+  <td><b>INSTRUMENTAL</b></td><td>cover_similarity + vocalcoverage.analyze ×2 → classify_instrumental_pair</td>
+  <td class="num"><b>31,6 s / paire de 60 s (mesuré bout en bout)</b></td>
+  <td>Verdict correct avec confiance 0.64 sur fixture (contenu 0.957, couvertures 0.67/0.00) ; double garde ratio+f0</td>
+  <td><span class="pill good">bon</span></td>
+  <td>La séparation de sources amont (Demucs ~1,5× temps réel s'ajoute) et sa qualité</td>
+</tr>
+<tr>
+  <td><b>NO_RELATION</b></td><td>Repli de toutes les chaînes</td>
+  <td class="num">—</td>
+  <td>Fiable : chaque détecteur est calibré pour préférer le faux négatif au faux positif</td>
+  <td><span class="pill good">bon</span></td>
+  <td>Un « non » peut cacher une relation que seule une méthode neuronale verrait</td>
+</tr>
+</tbody>
+</table></div>
+
+<h2 id="modernes"><span class="kicker">Document 8</span>Techniques modernes — quoi adopter pour chaque faiblesse</h2>
+
+<p class="lead">Pour chaque processus noté « moyen » ou « dépendant » ci-dessus, voici ce que la
+science du son propose de plus efficace, avec chiffres de benchmark, formules clés, licence et
+effort d'intégration. Classé par faiblesse à corriger.</p>
+
+<h3>Faiblesse 1 — les empreintes exactes cassent au pitch-shift / time-stretch</h3>
+
+<div class="grid2">
+<div class="card">
+<h4>Panako 2.x — hashing géométrique par triplets</h4>
+<div class="meta">Six &amp; Leman, ISMIR 2014 / 2021 · Java, AGPL-3.0 · zéro modèle</div>
+<p><b>L'idée-formule</b> : hasher des <em>rapports</em> et des <em>différences</em> au lieu de
+valeurs absolues. Pour trois pics e₁,e₂,e₃ :</p>
+<p class="fmt">(t₂−t₁)/(t₃−t₁) — invariant à tout étirement temporel constant<br/>
+f₁−f₂ sur axe log-fréquence — invariant au pitch-shift (translation de +K bins s'annule)</p>
+<p><b>Résultat</b> : survit à ±16 % de pitch/tempo (v2), et <em>rapporte</em> le % de shift détecté.
+Vs audfprint (même famille que le landmark d'audiotwin) qui « ne se remet pas d'un pitch-shift
+de plus de 3 % ». <b>Intégration</b> : idée portable directement dans <code>extract_landmarks</code>
+(passer de paires à triplets + hasher les deltas) — c'est la piste au meilleur rapport
+gain/effort, sans aucune dépendance nouvelle.</p>
+</div>
+<div class="card">
+<h4>PeakNetFP — pics spectraux + apprentissage</h4>
+<div class="meta">ISMIR 2025, arXiv:2506.21086 · PyTorch, modèle ~100× plus petit que NAFP</div>
+<p>Hybride des deux mondes : constellation de pics (comme Wang/Panako) traitée comme un
+<em>nuage de points</em> par un réseau type PointNet++, entraîné en contrastif.
+<b>&gt; 90 % de top-1 de 50 % à 200 % de time-stretch</b> (demi-vitesse à double vitesse) —
+le scénario DJ-set/nightcore que rien de classique ne couvre.</p>
+</div>
+<div class="card">
+<h4>NAFP / GraFPrint — empreintes neuronales contrastives</h4>
+<div class="meta">Chang et al. ICASSP 2021 (MIT, sans poids) · GraFPrint ICASSP 2025 (MIT, <b>poids publiés</b>)</div>
+<p>Segments de 1 s → log-mel → encodeur entraîné (NT-Xent) à être invariant aux augmentations
+(bruit 0-10 dB, réverbération, micro). <b>NAFP : 99,5 % top-1 sur requêtes de 6 s vs 69,6 % pour
+Dejavu</b> (famille Wang). GraFPrint (graphe de points temps-fréquence) : <b>93,3 % vs 60,2 %
+pour NAFP</b> à 0 dB bruit+réverb sur requêtes 5 s. Recherche par FAISS IVF-PQ.
+<b>Intégration</b> : extra optionnel <code>[neural]</code> — GraFPrint est le plus pratique
+(MIT + checkpoint téléchargeable).</p>
+</div>
+<div class="card">
+<h4>Réalité terrain : le benchmark BAF</h4>
+<div class="meta">Cortés et al., ISMIR 2022 · 57 h de vraie TV vs 74 h de références</div>
+<p>Douche froide utile : sur de l'audio broadcast réel (musique de fond sous parole), <em>aucun</em>
+système ne dépasse F1 = 0.47, et le classement s'inverse par rapport aux benchmarks synthétiques
+(Panako : précision 0.98 mais rappel 0.06). Moralité pour audiotwin : évaluer toute adoption sur
+ce jeu de données ouvert avant de croire les chiffres de labo.</p>
+</div>
+</div>
+
+<h3>Faiblesse 2 — la détection de covers classique plafonne à MAP ~0.4</h3>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Technique</th><th>MAP (Da-TACOS / covers80)</th><th>Coût d'intégration</th><th>Verdict pour audiotwin</th></tr></thead>
+<tbody>
+<tr><td><b>Qmax + chroma HPCP</b> (≈ pipeline actuel)</td><td class="num">0.365 / 0.544</td><td>—</td><td>Baseline actuelle</td></tr>
+<tr><td><b>crema-PCP</b> — « chroma profond » drop-in (CNN de reconnaissance d'accords, sorties 12-d)</td><td class="num">Qmax passe à 0.365→0.373+ ; +10 à +118 % relatif sur toute la famille classique</td><td>Moyen (TensorFlow) — extra optionnel</td><td><span class="pill good">Meilleur gain/effort</span> : remplace <code>compute_chroma</code> sans toucher OTI/DTW</td></tr>
+<tr><td><b>2DFTM</b> — |FFT 2D| de patches chroma → vecteur fixe</td><td class="num">0.275 (faible seul)</td><td>Trivial (~30 lignes numpy)</td><td><span class="pill good">Pré-filtre</span> : O(1) par paire pour présélectionner avant le DTW exact (deux étages classique)</td></tr>
+<tr><td><b>Chroma beat-synchrone</b> (Ellis 2007)</td><td class="num">— (vitesse, pas précision)</td><td>Trivial (librosa beat_track)</td><td>Réduit les séquences ×10-20 → matrice DTW ×100-400 plus petite ; risque : erreurs du beat-tracker</td></tr>
+<tr><td><b>CoverHunter</b> — Conformer + pooling attentionnel, 128-d</td><td class="num">0.845-0.865 / 0.926-0.933</td><td>Moyen (PyTorch, code officiel + fork maintenu)</td><td><span class="pill good">Option neuronale la plus pratique</span> : embeddings indexables, ×2 le MAP classique</td></tr>
+<tr><td><b>CLEWS</b> — contrastif sur segments 20 s (SOTA 2025)</td><td class="num">0.876 SHS100K ; stable sur requêtes courtes</td><td>Moyen-lourd (ResNet50, checkpoints Zenodo publiés)</td><td>Le plafond actuel réellement exécutable ; vérifier la licence du repo Sony</td></tr>
+<tr><td><b>ByteCover 1/2/3</b></td><td class="num">0.714 / 0.791 / (requêtes 30 s : 0.734)</td><td>Élevé (pas de code/poids officiels)</td><td>Référence de plafond, pas un composant intégrable</td></tr>
+<tr><td><b>MERT / CLAP / OpenL3</b> (embeddings généralistes)</td><td class="num">≈ hasard sur l'identité de version (kNN 0.066 vs 0.0625 aléatoire pour MERT gelé)</td><td>Faible</td><td><span class="pill bad">À ne PAS utiliser pour les covers</span> — utiles seulement pour une similarité de « production/timbre », axe orthogonal</td></tr>
+</tbody>
+</table></div>
+
+<h3>Faiblesse 3 — le maillon vocal (INSTRUMENTAL) — <em>déjà couvert par vocalcoverage</em></h3>
+<div class="grid2">
+<div class="card">
+<h4>vocalcoverage — le compagnon dédié (existant)</h4>
+<div class="meta">Projet frère dans mir-utils · MIT · numpy + librosa + ffmpeg</div>
+<p>Implémente la recette « separate-then-detect » validée par la littérature (Sun et al. 2020 ;
+SingFake ICASSP 2024), avec un raffinement au-delà du simple seuil RMS : chaque trame doit passer
+<em>deux</em> tests — ratio <span class="fmt">RMS(vocals)/RMS(mix) ≥ 0.1</span> ET une
+<b>confirmation harmonique</b> par détection de f0 (librosa.pyin, 80–1000 Hz, confiance agrégée
+au 75ᵉ percentile), ce qui filtre les fuites de séparation non vocales. Sortie :
+<span class="fmt">vocal_coverage ∈ [0,1]</span> + segments horodatés — l'entrée exacte de
+<code>classify_instrumental_pair</code>.</p>
+</div>
+<div class="card">
+<h4>Demucs (htdemucs) — la séparation en amont</h4>
+<div class="meta">MIT · 9.0-9.2 dB SDR sur MUSDB-HQ · CPU ~1,5× temps réel</div>
+<p>vocalcoverage attend un stem vocal <em>déjà séparé</em> : Demucs (ou audio-separator) reste
+l'étage amont recommandé. La chaîne complète : Demucs → <code>vocalcoverage.analyze()</code> →
+<code>classify_instrumental_pair()</code> → <code>suggest_relation()</code>.</p>
+</div>
+<div class="card">
+<h4>Pièges à éviter (résultats négatifs utiles)</h4>
+<div class="meta">Vérifié dans la littérature et les docs officielles</div>
+<p><b>inaSpeechSegmenter</b> et les VAD de parole (webrtcvad, silero) étiquettent le <em>chant</em>
+comme « musique », pas comme voix → inutilisables pour ce pattern. <b>Essentia
+voice_instrumental</b> marcherait mais ses modèles sont CC BY-NC-SA (non commercial) et Essentia
+n'a pas de wheels Windows officiels. <b>madmom</b> n'a aucun détecteur de chant.</p>
+</div>
+</div>
+
+<h3>Faiblesse 4 — l'identification de samples sous overdub</h3>
+<div class="grid2">
+<div class="card">
+<h4>Réglages Van Balen 2013 (gratuits, sans dépendance)</h4>
+<div class="meta">CMMR 2013 · pur DSP · benchmark Sample100</div>
+<p>Premier traitement formel du problème : densifier les pics, modifier l'espacement des paires,
+et utiliser une représentation type constant-Q pour tolérer les samples re-pitchés. Directement
+portable dans les paramètres de <code>extract_landmarks</code>. Le jeu Sample100 (75 requêtes
+hip-hop / 68 références soul-R&amp;B) fournit une évaluation prête à l'emploi pour
+<code>classify_sample</code>.</p>
+</div>
+<div class="card">
+<h4>Sony sample-ID 2025 — le SOTA intégrable</h4>
+<div class="meta">arXiv:2510.11507 · <b>MIT, poids sur Zenodo</b> · deps : torch, numpy, scipy</div>
+<p>Entraînement contrastif sur des mixes artificiels reconstruits stem par stem : le modèle apprend
+à reconnaître <em>un sous-ensemble de stems</em> dans un nouveau mix. <b>mAP 0.603 sur Sample100</b>
+vs 0.442 pour le SOTA précédent — et vs l'effondrement des méthodes classiques sur ce jeu.
+Inférence CPU faisable en comparaison par paires. Candidat idéal pour un extra
+<code>[neural]</code> alimentant <code>suggest_relation</code>.</p>
+</div>
+<div class="card">
+<h4>Matching assisté par séparation (le « pattern stems » quantifié)</h4>
+<div class="meta">Preuves : Sony 2025 (tableau 3), Cheston 2025, KaraMIR 2018</div>
+<p>Le README d'audiotwin documente déjà le pattern « fingerprinter des stems vocaux isolés pour
+attraper les remixes ». La littérature le quantifie : entraîner/matcher sur stems séparés par
+Demucs donne mAP 0.466 vs 0.527 avec les vrais stems — la qualité de séparation est le facteur
+limitant, mais les deux écrasent le matching sur mix complet. Coût incrémental faible :
+<code>extract_landmarks</code>/<code>cover_similarity</code> tournent tels quels sur chaque stem.</p>
+</div>
+<div class="card">
+<h4>Blanchiment adaptatif avant le peak-picking</h4>
+<div class="meta">Stowell &amp; Plumbley, ICMC 2007 · 3 lignes de numpy · zéro dépendance</div>
+<p>Gain de contrôle automatique par bin fréquentiel avant la détection de pics :
+<span class="fmt">P_n(k) = max(|X_n(k)|, r, m·P_{n−1}(k)) ; X'_n = X_n / P_n</span>.
+Les pics haute fréquence et les passages doux « concourent » équitablement — amélioration
+&gt; 10 points de F-mesure rapportée en détection d'onsets. Amélioration gratuite du
+peak-picker landmark d'audiotwin.</p>
+</div>
+</div>
+
+<h3>Faiblesse 5 — le passage à l'échelle catalogue (angle mort actuel)</h3>
+<p><code>detect()</code> est un comparateur <em>par paire</em> : dédupliquer N pistes coûte O(N²)
+comparaisons. Le module landmark a déjà la bonne architecture (index inversé SQLite interrogé en
+une passe), mais rien n'existe pour Chromaprint ni pour les covers. Les patrons éprouvés :</p>
+<ul>
+<li><b>Index inversé sur mots d'empreinte</b> — ce que fait AcoustID en production : indexer chaque
+mot uint32 (ou des n-grammes de mots) et ne comparer bit à bit que les candidats partageant
+suffisamment de mots. Faisable en SQLite, comme le landmark.</li>
+<li><b>Requêtes par plage sur B-tree/LMDB</b> (Panako) : ignorer les bits de poids faible du hash
+pour tolérer les erreurs d'un bin — la version « near-exact matching ». Stockage minuscule :
+~28 Go pour 1 M de chansons.</li>
+<li><b>FAISS IVF-PQ</b> pour tout ce qui devient un embedding (NAFP : ~5,8 Go / 100 k chansons,
+requête 19 segments en 1,5 s CPU ; perte de rappel &lt; 0,1 % vs recherche exhaustive).</li>
+<li><b>Pré-filtre 2DFTM</b> pour les covers : vecteur fixe par piste → candidats par plus proches
+voisins → DTW exact seulement sur le top-K.</li>
+</ul>
+
+<h3>Le plan neuronal compatible commercial — licences vérifiées</h3>
+
+<p>Pour une plateforme <b>commercialisée</b>, la licence disqualifie plus de candidats que la
+performance. Règles : une licence <b>NC</b> (non-commercial) interdit tout usage commercial, même
+côté serveur sans redistribution ; l'<b>AGPL</b> impose de publier les modifications du composant
+même en simple usage réseau ; et la licence des <b>poids</b> est souvent différente de celle du
+code — il faut vérifier les deux. Vérifications faites (juillet 2026, SPDX GitHub + Zenodo/HF) :</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Modèle</th><th>Licence code</th><th>Licence poids</th><th>Verdict commercial</th><th>Rôle dans la plateforme</th></tr></thead>
+<tbody>
+<tr><td><b>CLEWS</b> (sony/clews)</td><td class="fmt">MIT</td><td class="fmt">MIT (Zenodo 15045900)</td><td><span class="pill good">✅ libre</span></td><td>COVER — le SOTA (MAP 0.876 SHS100K) est intégralement MIT, y compris les checkpoints</td></tr>
+<tr><td><b>Sample-ID Sony</b> (sony/sampleid)</td><td class="fmt">MIT</td><td class="fmt">MIT (Zenodo 17413869)</td><td><span class="pill good">✅ libre</span></td><td>SAMPLE sous overdub/pitch (mAP 0.603) ; ses embeddings peuvent aussi servir de signal type NFP pour REMASTER</td></tr>
+<tr><td><b>Demucs</b> (htdemucs)</td><td class="fmt">MIT</td><td class="fmt">MIT (repo)</td><td><span class="pill good">✅ libre</span></td><td>Séparation amont de vocalcoverage et du pattern stems</td></tr>
+<tr><td><b>crema-PCP</b></td><td class="fmt">BSD-2</td><td class="fmt">inclus au package</td><td><span class="pill good">✅ libre</span></td><td>Chroma profond drop-in pour le pipeline cover classique</td></tr>
+<tr><td><b>NAFP</b> (mimbres/neural-audio-fp)</td><td class="fmt">MIT</td><td class="fmt">aucun poids officiel</td><td><span class="pill warn">⚠ entraînement à charge</span></td><td>Empreinte neuronale (NFP dédié) — code libre mais il faut l'entraîner soi-même (GPU)</td></tr>
+<tr><td><b>GraFPrint</b></td><td class="fmt">MIT</td><td class="fmt">non déclarée (HF)</td><td><span class="pill warn">⚠ poids ambigus</span></td><td>Demander la licence des poids à l'auteur, ou ré-entraîner avec le code MIT</td></tr>
+<tr><td><b>CoverHunter</b></td><td class="fmt">AUCUNE</td><td class="fmt">—</td><td><span class="pill bad">❌ tous droits réservés</span></td><td>Sans fichier de licence, l'usage commercial exige un accord écrit de l'auteur</td></tr>
+<tr><td><b>Re-MOVE</b></td><td class="fmt">AGPL-3.0</td><td class="fmt">idem</td><td><span class="pill bad">❌ viral</span></td><td>—</td></tr>
+<tr><td><b>NeuralSampleID</b> (Bhattacharjee)</td><td class="fmt">GPL-3.0</td><td class="fmt">idem</td><td><span class="pill bad">❌ viral</span></td><td>—</td></tr>
+<tr><td><b>MERT / modèles Essentia</b></td><td class="fmt">—</td><td class="fmt">CC-BY-NC(-SA)</td><td><span class="pill bad">❌ non-commercial</span></td><td>—</td></tr>
+<tr><td><b>Panako / Olaf</b></td><td class="fmt">AGPL-3.0</td><td class="fmt">—</td><td><span class="pill bad">❌ viral</span></td><td>L'<em>idée</em> du hashing par triplets reste libre — la réimplémenter dans audiotwin est légal (les licences protègent le code, pas l'algorithme)</td></tr>
+</tbody>
+</table></div>
+
+<p><b>Architecture recommandée</b> : un extra <code>audiotwin[neural]</code> (PyTorch) qui
+<em>télécharge les checkpoints au premier lancement</em> depuis Zenodo au lieu de les
+redistribuer — la plateforme ne redistribue alors ni code tiers ni poids, ce qui élimine toute
+question résiduelle. Ordre d'adoption : <b>1)</b> Demucs (déjà requis par la chaîne
+INSTRUMENTAL), <b>2)</b> Sample-ID Sony (débloque SAMPLE transformé + fournit le signal NFP
+manquant de REMASTER), <b>3)</b> CLEWS (fait passer COVER de MAP ~0.4 à ~0.87).</p>
+
+<h3>Et le RANSAC d'EDIT ?</h3>
+<p>C'est le processus le mieux noté du tableau — les alternatives modernes (MAGSAC++, LO-RANSAC,
+estimateur de Theil-Sen) apportent peu ici car le modèle n'a que 2 paramètres et 1000 itérations
+coûtent &lt; 1 ms. Deux améliorations à faible coût si besoin : <b>pondérer le tirage</b> par le
+<code>match_score</code> des points (actuellement ignoré — troisième élément du tuple inutilisé),
+et <b>terminaison adaptative</b> : arrêter dès que k dépasse la valeur de la formule de
+Fischler-Bolles recalculée avec le taux d'inliers du meilleur consensus courant.</p>
+
+<h2 id="formules"><span class="kicker">Document 9</span>Formules de référence (la boîte à outils mathématique)</h2>
+
+<p class="lead">Les définitions exactes derrière chaque brique, pour lire le code ou la littérature
+sans dictionnaire. Sources : Müller <em>FMP</em> (AudioLabs Erlangen), papiers originaux cités.</p>
+
+<h4>STFT — la représentation de base</h4>
+<div class="formula">X(m, k) = Σ_{n=0}^{N−1} x(n + m·H) · w(n) · e^{−2πikn/N}
+
+fréquence du bin k : F(k) = k·Fs/N (Hz)     temps de la trame m : T(m) = m·H/Fs (s)
+w = fenêtre (Hann), H = hop, N = taille de trame. |X|² = spectrogramme.</div>
+
+<h4>CQT — la grille alignée sur les demi-tons (Brown 1991)</h4>
+<div class="formula">f_k = f_min · 2^(k/B)          B bins par octave (12 → 1 bin = 1 demi-ton)
+Q = f_k / Δf_k = 1 / (2^(1/B) − 1)   ≈ 17 pour B = 12  (facteur de qualité constant)
+N_k = ⌈Q · Fs / f_k⌉                fenêtres LONGUES dans les graves — d'où la fuite
+                                      spectrale qui « comble » les silences courts (bug nº2)</div>
+
+<h4>Chroma / PCP (Fujishima 1999)</h4>
+<div class="formula">classe(k) = round(12 · log₂( (k/N)·Fs / f_ref )) mod 12
+PCP[p] = Σ_{k : classe(k)=p} |X(k)|²        → vecteur 12-d, invariant à l'octave</div>
+
+<h4>DTW + bande de Sakoe-Chiba (1978)</h4>
+<div class="formula">D(n, m) = C(n, m) + min{ D(n−1, m), D(n, m−1), D(n−1, m−1) }
+coût O(N·M) ; avec la bande |n − m·(N/M)| ≤ r : O(N·r) et déformations pathologiques interdites
+score audiotwin : similarité = 1 − D(N,M)/longueur_chemin  (distance cosinus par trame)</div>
+
+<h4>OTI — transposition optimale (Serrà, Gómez &amp; Herrera 2008)</h4>
+<div class="formula">g = moyenne des trames chroma, normalisée
+OTI(A, B) = argmax_{0 ≤ k ≤ 11} ⟨ g_A , rotation(g_B, −k) ⟩
+gain rapporté : ~17 % de précision cover en plus ; ~1/6 du coût vs tester les 12 rotations en DTW</div>
+
+<h4>RANSAC — itérations nécessaires (Fischler &amp; Bolles 1981)</h4>
+<div class="formula">k = log(1 − p) / log(1 − wⁿ)      n = 2 points par hypothèse (droite)
+p = 0.99, w = 0.5  →  k ≈ 17         audiotwin : 1000 itérations (marge ~60×)</div>
+
+<h4>Similarité de Hamming / popcount (Haitsma &amp; Kalker 2002)</h4>
+<div class="formula">BER(a, b) = popcount(a ⊕ b) / n_bits          similarité = 1 − BER
+seuil historique H-K : BER &lt; 0.35 ; audiotwin : similarité ≥ 0.85 (BER &lt; 0.15), plus strict</div>
+
+<h4>Constellation Wang 2003 — le compromis de l'appariement</h4>
+<div class="formula">survie d'un hash = p² (les DEUX pics doivent survivre)   — coût
+spécificité ×~10⁶ (20 bits d'entropie en plus) et hashes ×F  — bénéfice
+un match fiable émerge avec seulement ~1-2 % des hashes retrouvés, grâce au vote d'offset</div>
+
+<h4>HPSS par filtres médians (Fitzgerald 2010)</h4>
+<div class="formula">H = médiane le long du TEMPS  (les partiels harmoniques sont des lignes horizontales)
+P = médiane le long des FRÉQUENCES (les transitoires percussifs sont des lignes verticales)
+masque doux : M_H = H^p / (H^p + P^p)   puis  ISTFT(S_complexe · M_H)</div>
+
+<h4>2DFTM (Bertin-Mahieux &amp; Ellis 2012)</h4>
+<div class="formula">patch chroma 12×75 battements → |FFT2| → médiane par bin → PCA 50-d
+transposition = rotation circulaire, décalage temporel = translation :
+les deux ne changent que la PHASE des coefficients de Fourier → le module les efface</div>
+
+<h3>Sources principales</h3>
+<ul class="refs">
+<li>Wang 2003, « An Industrial-Strength Audio Search Algorithm » (Shazam) — base du module landmark.</li>
+<li>Serrà, Gómez &amp; Herrera 2008 ; Serrà et al. 2009 (Qmax) — base du module cover.</li>
+<li>Haitsma &amp; Kalker 2002 — comparaison binaire d'empreintes ; Lalinský 2011 — fonctionnement interne de Chromaprint ; Ke et al. 2005.</li>
+<li>Fischler &amp; Bolles 1981 — RANSAC. Fitzgerald 2010 — HPSS. Brown 1991 — CQT. Fujishima 1999 — PCP. Sakoe &amp; Chiba 1978 — DTW.</li>
+<li>Modernes : Six &amp; Leman 2014/2021 (Panako) ; Chang et al. 2021 (NAFP) ; GraFPrint ICASSP 2025 ; PeakNetFP ISMIR 2025 ; Yesiler et al. 2019/2020 (Da-TACOS, MOVE/Re-MOVE) ; Du et al. 2021-23 (ByteCover) ; Liu et al. 2023 (CoverHunter) ; Serra et al. ICML 2025 (CLEWS) ; Van Balen 2013 &amp; Sony 2025 (sample-ID) ; Cortés et al. 2022 (BAF) ; Stowell &amp; Plumbley 2007 (blanchiment adaptatif) ; Ellis 2007 (beat-sync) ; Bertin-Mahieux &amp; Ellis 2012 (2DFTM) ; McFee &amp; Bello 2017 (crema).</li>
+</ul>
+
+</main>
+</div>
+
+<footer>
+Documentation générée à partir de l'analyse du code d'audiotwin v0.2.0 (84 tests) et d'une revue de littérature sourcée · benchmarks mesurés localement (benchmarks/results.md) · les MAP/précisions citées proviennent des papiers référencés.
+</footer>
+
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+await mermaid.run({ querySelector: "pre.mermaid" });
+</script>
+</body>
+</html>
