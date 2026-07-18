@@ -359,6 +359,11 @@ the `device` parameter or the `AUDIOTWIN_DEVICE` environment variable
 (`cuda`, `cuda:1`, `mps`, `cpu`). CPU-only works everywhere (no GPU
 required).
 
+No permanent GPU? See [gpuoffload](https://github.com/ZeWills987/gpuoffload)
+— on-demand rented GPU pod, launched only when a neural job arrives and
+torn down after an idle timeout, so you pay for GPU-seconds instead of
+a GPU-hour rate around the clock.
+
 ## Raw scores for your own decision layer: `audiotwin.scores`
 
 ```python
