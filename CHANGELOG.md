@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0
+
+- **Cached pair scoring: `compute_track_signals` + `extract_all_scores_from_signals`**
+  — in a large catalog every track appears in many pairs, and
+  `extract_all_scores(path_a, path_b)` recomputes each track's
+  fingerprints/landmarks/chroma/embeddings for every pair. The new pair
+  of functions splits the work: extract every representation ONCE per
+  track (JSON-serializable dict), then score any pair from two cached
+  results — no audio decoding, no GPU, no disk access. Verified by test
+  to reproduce `extract_all_scores` exactly (bit-for-bit outside the
+  float32/float64 chroma round-trip, which is approx to 1e-6).
+- **LandmarkIndex: `add_track_landmarks` / `query_landmarks`** — insert
+  and match pre-extracted landmark lists (the cached counterparts of
+  `add_track` / `query`).
+
 ## 0.7.0
 
 - **New `audiotwin.scores` module — raw signals, no decisions** —

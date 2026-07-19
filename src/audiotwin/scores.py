@@ -149,6 +149,176 @@ def _vocal_scores(path_a: str, path_b: str, stem_a: str, stem_b: str) -> dict:
     }
 
 
+def compute_track_signals(
+    path: str,
+    include_chromaprint: bool = True,
+    include_landmark: bool = True,
+    include_cover: bool = True,
+    include_neural: bool = False,
+) -> dict:
+    """Per-TRACK representations, computed once, for cached pair scoring.
+
+    In a large catalog every track appears in many pairs: recomputing
+    fingerprints/landmarks/chroma/embeddings per PAIR (what
+    :func:`extract_all_scores` does, by design, from paths) repeats each
+    track's work dozens of times. This function extracts everything ONCE
+    per track; feed two results to :func:`extract_all_scores_from_signals`
+    to get the exact same scores dict without touching the audio again.
+
+    Returns a dict with (sections follow the include flags; missing
+    extras omit their keys with one warning per process):
+
+    * ``file_hash`` (str), ``chromaprint_fp`` (str)
+    * ``landmarks``: list of ``[hash, t_anchor]``
+    * ``chroma``: ``(12, T)`` list-of-lists, ``duration_seconds`` (float)
+    * ``neural_embedding``: ``(n_chunks, dim)`` list-of-lists
+
+    Values are JSON-serializable; numpy arrays are accepted back by
+    :func:`extract_all_scores_from_signals` (callers may store either).
+    """
+    signals: dict = {}
+
+    if include_chromaprint:
+        signals["file_hash"] = file_hash(path)
+        signals["chromaprint_fp"] = compute_fingerprint(path)
+
+    if include_landmark:
+        try:
+            from audiotwin.audio import decode_audio
+            from audiotwin.landmark import DEFAULT_LANDMARK_SR, extract_landmarks
+
+            audio = decode_audio(path, sr=DEFAULT_LANDMARK_SR)
+            signals["landmarks"] = [
+                [int(h), float(t)]
+                for h, t in extract_landmarks(audio, sr=DEFAULT_LANDMARK_SR)
+            ]
+        except ImportError as exc:
+            _warn_once("landmark", str(exc))
+
+    if include_cover:
+        try:
+            from audiotwin.audio import decode_audio
+            from audiotwin.cover import DEFAULT_COVER_SR, compute_chroma
+
+            audio = decode_audio(path, sr=DEFAULT_COVER_SR)
+            signals["duration_seconds"] = len(audio) / DEFAULT_COVER_SR
+            signals["chroma"] = [
+                [float(x) for x in row] for row in compute_chroma(audio)
+            ]
+        except ImportError as exc:
+            _warn_once("cover", str(exc))
+
+    if include_neural:
+        try:
+            from audiotwin.neural import neural_embedding
+
+            signals["neural_embedding"] = [
+                [float(x) for x in row] for row in neural_embedding(path)
+            ]
+        except ImportError as exc:
+            _warn_once("neural", str(exc))
+
+    return signals
+
+
+def extract_all_scores_from_signals(signals_a: dict, signals_b: dict) -> dict:
+    """Pair scores from two :func:`compute_track_signals` results.
+
+    Same contract and same OUTPUT FIELDS as :func:`extract_all_scores`
+    (no thresholds, no verdicts, flat JSON-serializable dict) — but no
+    audio decoding, no GPU, no disk access: pure comparisons of cached
+    representations. Sections are emitted when BOTH sides carry the
+    needed keys; anything missing on either side is silently omitted
+    (mirroring the missing-extra behavior of :func:`extract_all_scores`).
+
+    Numpy arrays are accepted anywhere a list was documented.
+    """
+    import numpy as np
+
+    scores: dict = {}
+
+    if "file_hash" in signals_a and "file_hash" in signals_b:
+        scores["file_hash_match"] = signals_a["file_hash"] == signals_b["file_hash"]
+    if "chromaprint_fp" in signals_a and "chromaprint_fp" in signals_b:
+        scores["chromaprint_score"] = float(
+            compare_fingerprints(signals_a["chromaprint_fp"], signals_b["chromaprint_fp"])
+        )
+
+    if "landmarks" in signals_a and "landmarks" in signals_b:
+        from audiotwin.landmark import LandmarkIndex
+
+        index = LandmarkIndex(":memory:")
+        index.add_track_landmarks(
+            "b", [(int(h), float(t)) for h, t in signals_b["landmarks"]]
+        )
+        results = index.query_landmarks(
+            [(int(h), float(t)) for h, t in signals_a["landmarks"]],
+            min_aligned_hashes=1,
+        )
+        if not results:
+            scores.update(
+                landmark_aligned_hashes=0,
+                landmark_score=0.0,
+                landmark_offset_seconds=None,
+                landmark_match_points=[],
+            )
+        else:
+            top = results[0]
+            scores.update(
+                landmark_aligned_hashes=int(top["aligned_hashes"]),
+                landmark_score=float(top["score"]),
+                landmark_offset_seconds=float(top["offset_seconds"]),
+                landmark_match_points=_match_points_to_lists(top["match_points"]),
+            )
+
+    if "chroma" in signals_a and "chroma" in signals_b:
+        from audiotwin.cover import cover_similarity_from_chroma
+
+        chroma_a = np.asarray(signals_a["chroma"], dtype=np.float64)
+        chroma_b = np.asarray(signals_b["chroma"], dtype=np.float64)
+        result = cover_similarity_from_chroma(chroma_a, chroma_b)
+        duration_a = float(signals_a.get("duration_seconds") or 0.0)
+        duration_b = float(signals_b.get("duration_seconds") or 0.0)
+        scores.update(
+            cover_similarity=float(result["similarity"]),
+            cover_transposition_semitones=int(result["transposition_semitones"]),
+            cover_dtw_normalized_cost=float(result["dtw_normalized_cost"]),
+            cover_duration_ratio=duration_b / duration_a if duration_a else 0.0,
+        )
+
+    if "neural_embedding" in signals_a and "neural_embedding" in signals_b:
+        from audiotwin.neural import (
+            DEFAULT_CHUNK_HOP_SECONDS,
+            DEFAULT_CHUNK_SECONDS,
+            DEFAULT_COSINE_FLOOR,
+            _calibrate,
+        )
+
+        emb_a = np.asarray(signals_a["neural_embedding"], dtype=np.float32)
+        emb_b = np.asarray(signals_b["neural_embedding"], dtype=np.float32)
+        raw_matrix = emb_a @ emb_b.T
+        best_raw = raw_matrix.max(axis=1)
+        best_calibrated = _calibrate(best_raw, DEFAULT_COSINE_FLOOR)
+        center = DEFAULT_CHUNK_SECONDS / 2.0
+        points = []
+        for i in range(raw_matrix.shape[0]):
+            j = int(raw_matrix[i].argmax())
+            points.append(
+                [
+                    float(i * DEFAULT_CHUNK_HOP_SECONDS + center),
+                    float(j * DEFAULT_CHUNK_HOP_SECONDS + center),
+                    float(best_calibrated[i]),
+                ]
+            )
+        scores.update(
+            neural_similarity=float(np.mean(best_calibrated)),
+            neural_similarity_raw=float(np.mean(best_raw)),
+            neural_match_points=points,
+        )
+
+    return scores
+
+
 def extract_all_scores(
     path_a: str,
     path_b: str,

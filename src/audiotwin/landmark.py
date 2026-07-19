@@ -318,6 +318,56 @@ class LandmarkIndex:
         self._conn.commit()
         return len(landmarks)
 
+    def add_track_landmarks(
+        self, track_id: str, landmarks: list[tuple[int, float]]
+    ) -> int:
+        """Insert PRE-EXTRACTED landmarks under ``track_id``.
+
+        The cached counterpart of :meth:`add_track` for callers that store
+        :func:`extract_landmarks` output per track (e.g. a large-catalog
+        pipeline) and don't want audio re-decoded per pair.
+
+        Raises:
+            ValueError: If ``track_id`` is already indexed.
+
+        Returns:
+            The number of landmarks added.
+        """
+        exists = self._conn.execute(
+            "SELECT 1 FROM tracks WHERE track_id = ?", (track_id,)
+        ).fetchone()
+        if exists:
+            raise ValueError(
+                f"track_id {track_id!r} is already indexed; call "
+                "remove_track() first to replace it."
+            )
+        self._conn.executemany(
+            "INSERT INTO landmarks (hash, track_id, t_anchor) VALUES (?, ?, ?)",
+            [(int(h), track_id, float(t)) for h, t in landmarks],
+        )
+        self._conn.execute(
+            "INSERT INTO tracks (track_id, n_landmarks) VALUES (?, ?)",
+            (track_id, len(landmarks)),
+        )
+        self._conn.commit()
+        return len(landmarks)
+
+    def query_landmarks(
+        self,
+        landmarks: list[tuple[int, float]],
+        min_aligned_hashes: int = 10,
+        offset_bin_width: float = 0.2,
+    ) -> list[dict]:
+        """Match PRE-EXTRACTED query landmarks against the index.
+
+        The cached counterpart of :meth:`query` (without the decode /
+        extract / pitch-shift stages): given the same landmark lists,
+        returns exactly what :meth:`query` would.
+        """
+        return _match_landmarks(
+            landmarks, self._conn, min_aligned_hashes, offset_bin_width
+        )
+
     def remove_track(self, track_id: str) -> int:
         """Remove a track's landmarks. Returns the number of rows deleted."""
         cursor = self._conn.execute("DELETE FROM landmarks WHERE track_id = ?", (track_id,))

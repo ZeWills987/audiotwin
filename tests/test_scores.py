@@ -134,3 +134,36 @@ def test_neural_fields_when_enabled(sine_440, sine_440_copy):
     assert len(scores["neural_match_points"]) > 0
     assert all(len(p) == 3 for p in scores["neural_match_points"])
     json.dumps(scores)  # still serializable with neural fields
+
+
+@requires_chromaprint
+@requires_ffmpeg
+def test_cached_signals_reproduce_extract_all_scores(sine_440, different_audio):
+    """compute_track_signals + extract_all_scores_from_signals == extract_all_scores.
+
+    Le pipeline "represente une fois par track, compare depuis le cache"
+    doit produire EXACTEMENT les memes valeurs que le chemin par fichiers
+    (les floats JSON-roundtrippes sont sans perte ; seule la matrice
+    chroma peut changer de dtype, d'ou l'approx sur les champs cover).
+    """
+    import math
+
+    pytest.importorskip("librosa")
+    pytest.importorskip("scipy")
+    from audiotwin.scores import compute_track_signals, extract_all_scores_from_signals
+
+    direct = extract_all_scores(sine_440, different_audio, include_neural=False)
+
+    sig_a = compute_track_signals(sine_440, include_neural=False)
+    sig_b = compute_track_signals(different_audio, include_neural=False)
+    # Round-trip JSON : ce que stockerait une base externe.
+    sig_a = json.loads(json.dumps(sig_a))
+    sig_b = json.loads(json.dumps(sig_b))
+    cached = extract_all_scores_from_signals(sig_a, sig_b)
+
+    assert set(cached) == set(direct)
+    for key in direct:
+        if key.startswith("cover_"):
+            assert math.isclose(cached[key], direct[key], rel_tol=1e-6, abs_tol=1e-9), key
+        else:
+            assert cached[key] == direct[key], key
